@@ -2,10 +2,28 @@ import * as THREE from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { Game } from '../core/Game';
 import type { GameObject } from '../ecs/GameObject';
+import { SceneManager } from './SceneManager';
+import { Inspector } from './Inspector';
+import { AssetManager } from '../assets/AssetManager';
+import { NavigationToolset } from './NavigationToolset';
+import { EnvironmentToolset } from './EnvironmentToolset';
+import { SimulationController } from './SimulationController';
+import { EditorUI } from './EditorUI';
+import { DebugTools } from './DebugTools';
+import { CollaborationManager } from './CollaborationManager';
 
 export class Editor {
   readonly gizmo: TransformControls;
   selected?: GameObject;
+  readonly sceneManager: SceneManager;
+  readonly inspector: Inspector;
+  readonly assetManager: AssetManager;
+  readonly navigation: NavigationToolset;
+  readonly environment: EnvironmentToolset;
+  readonly simulation: SimulationController;
+  readonly debug: DebugTools;
+  readonly collaboration: CollaborationManager;
+  readonly ui: EditorUI;
 
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
@@ -17,6 +35,24 @@ export class Editor {
     this.gizmo.visible = false;
     this.gizmo.setMode(this.mode);
     game.scene.add(this.gizmo);
+
+    this.sceneManager = new SceneManager(game);
+    this.inspector = new Inspector(game);
+    this.assetManager = new AssetManager(game);
+    this.simulation = new SimulationController(game);
+    this.debug = new DebugTools(game);
+    this.navigation = new NavigationToolset(game, this);
+    this.environment = new EnvironmentToolset(game);
+    this.collaboration = new CollaborationManager(game);
+    this.ui = new EditorUI(
+      game,
+      this.inspector,
+      this.simulation,
+      this.assetManager,
+      this.debug,
+      this.collaboration,
+      this.sceneManager,
+    );
 
     this.gizmo.addEventListener('dragging-changed', (event: any) => {
       game.controls.enabled = !event.value;
@@ -33,6 +69,12 @@ export class Editor {
     const keyHandler = (event: KeyboardEvent) => this.onKeyDown(event);
     window.addEventListener('keydown', keyHandler);
     this.disposeFns.push(() => window.removeEventListener('keydown', keyHandler));
+
+    this.sceneManager.events.on('removed', (go: GameObject) => {
+      if (this.selected === go) {
+        this.select(undefined);
+      }
+    });
   }
 
   dispose() {
@@ -40,10 +82,12 @@ export class Editor {
       dispose();
     }
     this.disposeFns = [];
+    this.ui.element.remove();
   }
 
   select(go?: GameObject) {
     this.selected = go;
+    this.inspector.inspect(go);
     if (go) {
       this.gizmo.visible = true;
       this.gizmo.setMode(this.mode);
@@ -87,7 +131,7 @@ export class Editor {
     if (event.key === 'Delete' && this.selected) {
       const toRemove = this.selected;
       this.select(undefined);
-      this.game.remove(toRemove);
+      this.sceneManager.remove(toRemove);
       return;
     }
 
@@ -106,6 +150,19 @@ export class Editor {
       case 'Digit3':
       case 'Numpad3':
         this.setMode('scale');
+        break;
+      case 'KeyF':
+        this.navigation.focusOnSelection();
+        break;
+      case 'Space':
+        event.preventDefault();
+        this.simulation.toggle();
+        break;
+      case 'KeyG':
+        this.environment.showGrid(!this.game.gridHelper.visible);
+        break;
+      case 'KeyB':
+        this.navigation.saveBookmark(`Bookmark ${Date.now()}`);
         break;
     }
   }
