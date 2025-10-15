@@ -17,5 +17,7 @@ kannst du später einfach in `models/` ergänzen.
 - Verwende **T** (oder **1**) zum Verschieben, **R** (oder **2**) zum Drehen und **S** (oder **3**) zum Skalieren.
 - Ziehe an den Achsen des Gizmos, um die ausgewählte Transformation anzuwenden.
 - Drücke **Entf**, um das ausgewählte Objekt aus der Szene zu entfernen.
+- Mit **F** setzt du Position, Rotation und Skalierung auf die Startwerte zurück.
+- Ein Transform-Overlay oben rechts zeigt dir jederzeit die exakten Positions-, Rotations- und Skalierungswerte an, damit du schnell wieder zu `0` zurückfindest.
 
 Lege deine `.glb`- oder `.gltf`-Dateien in `examples/editor-demo/models/` ab, damit sie automatisch geladen werden. Wenn du eine eigene Szene speichern möchtest, ersetze einfach die mitgelieferte `scene.json` durch deine Variante.
