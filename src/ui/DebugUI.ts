@@ -62,16 +62,47 @@ export async function mountDebugUI(game: Game, options: Options = {}) {
     return stack;
   };
 
+  const ensurePanelDock = () => {
+    let dock = document.querySelector<HTMLDivElement>('.editor-panel-dock');
+    if (!dock) {
+      const styleId = 'editor-panel-dock-styles';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          .editor-panel-dock {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 12px;
+            z-index: 44;
+            pointer-events: none;
+            max-width: min(100vw - 32px, 960px);
+          }
+          .editor-panel-dock > * {
+            pointer-events: auto;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      dock = document.createElement('div');
+      dock.className = 'editor-panel-dock';
+      document.body.appendChild(dock);
+    }
+    return dock;
+  };
+
   const hostId = 'debug-pane-host-styles';
   if (!document.getElementById(hostId)) {
     const style = document.createElement('style');
     style.id = hostId;
     style.textContent = `
       .debug-pane-host {
-        position: fixed;
-        top: 16px;
-        right: 16px;
-        z-index: 44;
+        position: relative;
+        z-index: 1;
         pointer-events: auto;
         max-height: calc(100vh - 32px);
         display: flex;
@@ -109,10 +140,11 @@ export async function mountDebugUI(game: Game, options: Options = {}) {
     document.head.appendChild(style);
   }
 
+  const dock = ensurePanelDock();
   const host = document.createElement('div');
   host.className = 'debug-pane-host';
   host.dataset.hidden = 'false';
-  document.body.appendChild(host);
+  dock.appendChild(host);
 
   const pane = new Pane({ title: 'Debug', container: host });
 

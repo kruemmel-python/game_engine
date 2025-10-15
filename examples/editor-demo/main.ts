@@ -121,10 +121,8 @@ function setupScenePanel(game: Game, editor: Editor) {
     style.id = styleId;
     style.textContent = `
     .editor-scene-panel {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 40;
+      position: relative;
+      z-index: 1;
       display: grid;
       gap: 8px;
       max-width: 320px;
@@ -264,6 +262,7 @@ function setupScenePanel(game: Game, editor: Editor) {
   panel.className = 'editor-scene-panel';
   panel.dataset.hidden = 'false';
 
+  const dock = ensurePanelDock();
   const toggleStack = ensureToggleStack();
   const showButton = document.createElement('button');
   showButton.type = 'button';
@@ -348,7 +347,7 @@ function setupScenePanel(game: Game, editor: Editor) {
   fileInput.style.display = 'none';
   panel.appendChild(fileInput);
 
-  document.body.appendChild(panel);
+  dock.appendChild(panel);
 
   let busy = false;
 
@@ -497,6 +496,39 @@ function ensureToggleStack() {
     document.body.appendChild(stack);
   }
   return stack;
+}
+
+function ensurePanelDock() {
+  let dock = document.querySelector<HTMLDivElement>('.editor-panel-dock');
+  if (!dock) {
+    const styleId = 'editor-panel-dock-styles';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        .editor-panel-dock {
+          position: fixed;
+          top: 16px;
+          right: 16px;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          gap: 12px;
+          z-index: 44;
+          pointer-events: none;
+          max-width: min(100vw - 32px, 960px);
+        }
+        .editor-panel-dock > * {
+          pointer-events: auto;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    dock = document.createElement('div');
+    dock.className = 'editor-panel-dock';
+    document.body.appendChild(dock);
+  }
+  return dock;
 }
 
 function createCameraToggleButton() {
