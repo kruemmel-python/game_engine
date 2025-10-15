@@ -10,10 +10,12 @@ export class Editor {
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private disposeFns: Array<() => void> = [];
+  private mode: 'translate' | 'rotate' | 'scale' = 'translate';
 
   constructor(public game: Game) {
     this.gizmo = new TransformControls(game.camera, game.renderer.domElement);
     this.gizmo.visible = false;
+    this.gizmo.setMode(this.mode);
     game.scene.add(this.gizmo);
 
     this.gizmo.addEventListener('dragging-changed', (event: any) => {
@@ -44,6 +46,7 @@ export class Editor {
     this.selected = go;
     if (go) {
       this.gizmo.visible = true;
+      this.gizmo.setMode(this.mode);
       this.gizmo.attach(go.object3D);
     } else {
       this.gizmo.visible = false;
@@ -85,7 +88,32 @@ export class Editor {
       const toRemove = this.selected;
       this.select(undefined);
       this.game.remove(toRemove);
+      return;
     }
+
+    switch (event.code) {
+      case 'KeyT':
+      case 'Digit1':
+      case 'Numpad1':
+        this.setMode('translate');
+        break;
+      case 'KeyR':
+      case 'Digit2':
+      case 'Numpad2':
+        this.setMode('rotate');
+        break;
+      case 'KeyS':
+      case 'Digit3':
+      case 'Numpad3':
+        this.setMode('scale');
+        break;
+    }
+  }
+
+  private setMode(mode: 'translate' | 'rotate' | 'scale') {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    this.gizmo.setMode(mode);
   }
 
   private findGameObject(object: THREE.Object3D | null): GameObject | undefined {
