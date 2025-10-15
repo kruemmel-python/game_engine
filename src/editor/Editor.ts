@@ -44,6 +44,10 @@ export class Editor {
       game.controls.enabled = !event.value;
     });
     this.gizmo.addEventListener('change', () => this.updateTransformHud());
+    this.gizmo.addEventListener('objectChange', () => {
+      if (!this.selected) return;
+      this.syncBodyToObject(this.selected);
+    });
 
     const domElement = game.renderer.domElement;
 
@@ -224,11 +228,34 @@ export class Editor {
           targetQuat.w,
         );
       }
+      this.game.invalidateCameraCollision();
     }
 
     this.gizmo.attach(go.object3D);
     this.gizmo.updateMatrixWorld(true);
     this.updateTransformHud(true);
+  }
+
+  private syncBodyToObject(go: GameObject) {
+    if (!go.body) return;
+    const pos = go.object3D.position;
+    go.body.position.set(pos.x, pos.y, pos.z);
+    if ((go.body as any).interpolatedPosition) {
+      (go.body as any).interpolatedPosition.set(pos.x, pos.y, pos.z);
+    }
+    const quat = go.object3D.quaternion;
+    go.body.quaternion.set(quat.x, quat.y, quat.z, quat.w);
+    if ((go.body as any).interpolatedQuaternion) {
+      (go.body as any).interpolatedQuaternion.set(
+        quat.x,
+        quat.y,
+        quat.z,
+        quat.w,
+      );
+    }
+    go.body.velocity.set(0, 0, 0);
+    go.body.angularVelocity.set(0, 0, 0);
+    this.game.invalidateCameraCollision();
   }
 
   private createTransformHud() {

@@ -121,6 +121,10 @@ export class Game {
     this.cameraCollisionDirty = true;
   }
 
+  invalidateCameraCollision(){
+    this.cameraCollisionDirty = true;
+  }
+
   resize(){ const w = this.container.clientWidth || innerWidth; const h = this.container.clientHeight || innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
 
   tick(now: number){
