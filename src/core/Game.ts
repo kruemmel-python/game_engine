@@ -22,6 +22,7 @@ export class Game {
   private last = performance.now(); private acc = 0; private dtFixed = 1/60;
   paused = false;
 
+  private cameraCollisionEnabled = true;
   private cameraCollisionRay = new Raycaster();
   private cameraCollisionPadding = 0.25;
   private cameraCollisionMeshes: THREE.Object3D[] = [];
@@ -45,6 +46,7 @@ export class Game {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true; this.controls.dampingFactor = 0.05; this.controls.screenSpacePanning = true;
+    this.controls.minDistance = 0.3; this.controls.maxDistance = 50;
 
     // Physics
     this.world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.81,0) });
@@ -125,6 +127,12 @@ export class Game {
     this.cameraCollisionDirty = true;
   }
 
+  setCameraCollisionEnabled(enabled: boolean){
+    if (this.cameraCollisionEnabled === enabled) return;
+    this.cameraCollisionEnabled = enabled;
+    if (enabled) this.invalidateCameraCollision();
+  }
+
   resize(){ const w = this.container.clientWidth || innerWidth; const h = this.container.clientHeight || innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
 
   tick(now: number){
@@ -134,7 +142,7 @@ export class Game {
     while (this.acc >= this.dtFixed){ this.world.step(this.dtFixed); this.acc -= this.dtFixed; }
     for (const o of this.objects) o.update(dt);
     this.controls.update();
-    this.resolveCameraCollision();
+    if (this.cameraCollisionEnabled) this.resolveCameraCollision();
     this.renderScene();
   }
 

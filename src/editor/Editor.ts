@@ -31,8 +31,11 @@ export class Editor {
   private outlinePass?: OutlinePass;
   private selectionListeners = new Set<(selection?: GameObject) => void>();
   private restoreRender?: () => void;
+  private restoreCameraCollision?: () => void;
 
   constructor(public game: Game) {
+    this.game.setCameraCollisionEnabled(false);
+    this.restoreCameraCollision = () => this.game.setCameraCollisionEnabled(true);
     this.gizmo = new TransformControls(game.camera, game.renderer.domElement);
     this.gizmo.visible = false;
     this.gizmo.setMode(this.mode);
@@ -77,6 +80,10 @@ export class Editor {
     if (this.restoreRender) {
       this.restoreRender();
       this.restoreRender = undefined;
+    }
+    if (this.restoreCameraCollision) {
+      this.restoreCameraCollision();
+      this.restoreCameraCollision = undefined;
     }
     this.composer?.dispose();
     this.composer = undefined;
