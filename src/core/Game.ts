@@ -109,8 +109,11 @@ export class Game {
     requestAnimationFrame((t)=> this.tick(t));
     if (this.paused){ this.renderer.render(this.scene, this.camera); return; }
     const dt = Math.min(0.05, (now - this.last)/1000); this.last=now; this.acc+=dt;
+    this.events.emit('pre-update', { now, dt });
     while (this.acc >= this.dtFixed){ this.world.step(this.dtFixed); this.acc -= this.dtFixed; }
+    this.events.emit('post-physics', { now, dt });
     for (const o of this.objects) o.update(dt);
+    this.events.emit('post-update', { now, dt });
     this.controls.update(); this.renderer.render(this.scene, this.camera);
   }
 
