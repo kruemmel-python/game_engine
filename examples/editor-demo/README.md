@@ -18,6 +18,7 @@ kannst du später einfach in `models/` ergänzen.
 - Ziehe an den Achsen des Gizmos, um die ausgewählte Transformation anzuwenden.
 - Drücke **Entf**, um das ausgewählte Objekt aus der Szene zu entfernen.
 - Mit **F** setzt du Position, Rotation und Skalierung auf die Startwerte zurück.
+- Mit **C** (oder über den Kamera-Schalter oben rechts) wechselst du zwischen Player- und Viewer-Kamera.
 - Ein Transform-Overlay oben rechts zeigt dir jederzeit die exakten Positions-, Rotations- und Skalierungswerte an, damit du schnell wieder zu `0` zurückfindest.
 
 Lege deine `.glb`- oder `.gltf`-Dateien in `examples/editor-demo/models/` ab, damit sie automatisch geladen werden.

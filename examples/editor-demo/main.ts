@@ -15,12 +15,18 @@ const container = document.getElementById('app')!;
 const game = new Game(container);
 const editor = new Editor(game);
 let cameraRig: GameObject | undefined;
+let cameraMode: 'player' | 'viewer' = 'player';
+let cameraToggleButton: HTMLButtonElement | undefined;
 
 (window as any).game = game;
 (window as any).editor = editor;
 
 setupScenePanel(game, editor);
-void mountDebugUI(game, { getCameraRig: () => cameraRig, editor });
+cameraToggleButton = createCameraToggleButton();
+applyCameraMode();
+void mountDebugUI(game, { getCameraRig: () => cameraRig, editor }).then(() =>
+  applyCameraMode(),
+);
 
 // 🔎 Alle GLBs automatisch finden (unterstützt mehrere bekannte Ordnernamen)
 const glbMap = import.meta.glob(
@@ -91,6 +97,7 @@ async function spawnGLB(
     (rig as any).addComponent(new CameraFollow({ target: go }));
     cameraRig = rig;
     game.add(rig);
+    applyCameraMode();
 
     // Editor
     editor.select(go);
@@ -243,6 +250,9 @@ function setupScenePanel(game: Game, editor: Editor) {
     .editor-toggle-button[data-role="scene"] {
       background: rgba(30, 64, 175, 0.75);
     }
+    .editor-toggle-button[data-role="camera"] {
+      background: rgba(14, 165, 233, 0.75);
+    }
     .editor-scene-panel[data-hidden="true"] {
       display: none;
     }
@@ -253,16 +263,6 @@ function setupScenePanel(game: Game, editor: Editor) {
   const panel = document.createElement('div');
   panel.className = 'editor-scene-panel';
   panel.dataset.hidden = 'false';
-
-  const ensureToggleStack = () => {
-    let stack = document.querySelector<HTMLDivElement>('.editor-toggle-stack');
-    if (!stack) {
-      stack = document.createElement('div');
-      stack.className = 'editor-toggle-stack';
-      document.body.appendChild(stack);
-    }
-    return stack;
-  };
 
   const toggleStack = ensureToggleStack();
   const showButton = document.createElement('button');
@@ -373,6 +373,8 @@ function setupScenePanel(game: Game, editor: Editor) {
 
   const clearScene = () => {
     editor.select(undefined);
+    cameraRig = undefined;
+    applyCameraMode();
     const toRemove = [...game.objects];
     for (const go of toRemove) {
       game.remove(go);
@@ -486,3 +488,105 @@ function setupScenePanel(game: Game, editor: Editor) {
     }
   });
 }
+
+function ensureToggleStack() {
+  let stack = document.querySelector<HTMLDivElement>('.editor-toggle-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.className = 'editor-toggle-stack';
+    document.body.appendChild(stack);
+  }
+  return stack;
+}
+
+function createCameraToggleButton() {
+  const stack = ensureToggleStack();
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'editor-toggle-button';
+  button.dataset.role = 'camera';
+  button.addEventListener('click', () => toggleCameraMode());
+  stack.appendChild(button);
+  return button;
+}
+
+function refreshCameraToggleButton(hasFollow: boolean) {
+  if (!cameraToggleButton) return;
+  const isPlayer = cameraMode === 'player';
+  cameraToggleButton.disabled = !hasFollow;
+  cameraToggleButton.textContent = isPlayer ? 'Kamera: Player' : 'Kamera: Viewer';
+  cameraToggleButton.title = hasFollow
+    ? isPlayer
+      ? 'Zur Viewer-Kamera wechseln (C)'
+      : 'Zur Player-Kamera wechseln (C)'
+    : 'Keine Follow-Kamera verfügbar.';
+}
+
+function getCameraFollow() {
+  const rig = cameraRig;
+  if (!rig) return undefined;
+  return rig.components.find((comp): comp is CameraFollow => comp instanceof CameraFollow);
+}
+
+function alignOrbitTarget(follow: CameraFollow) {
+  const target = follow.target as GameObject | undefined;
+  if (!target) return;
+  const pos = target.object3D.position;
+  game.controls.target.copy(pos);
+  game.controls.update();
+}
+
+function applyCameraMode() {
+  const follow = getCameraFollow();
+  const hasFollow = !!follow;
+  if (follow) {
+    if (cameraMode === 'player') {
+      follow.setActive(true);
+    } else {
+      follow.setActive(false);
+      alignOrbitTarget(follow);
+    }
+  }
+  refreshCameraToggleButton(hasFollow);
+  window.dispatchEvent(
+    new CustomEvent('editor-camera-mode-changed', {
+      detail: { mode: cameraMode, hasFollow },
+    }),
+  );
+}
+
+function setCameraMode(mode: 'player' | 'viewer') {
+  if (cameraMode === mode) {
+    applyCameraMode();
+    return;
+  }
+  cameraMode = mode;
+  applyCameraMode();
+}
+
+function toggleCameraMode() {
+  setCameraMode(cameraMode === 'player' ? 'viewer' : 'player');
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return (
+    target.isContentEditable ||
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT'
+  );
+}
+
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'KeyC' || event.repeat) return;
+  if (isEditableTarget(event.target)) return;
+  toggleCameraMode();
+});
+
+window.addEventListener('editor-request-camera-mode', (event) => {
+  const detail = (event as CustomEvent<{ mode?: 'player' | 'viewer' }>).detail;
+  if (!detail?.mode) return;
+  setCameraMode(detail.mode);
+});

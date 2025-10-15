@@ -13,6 +13,7 @@ export class CameraFollow extends Component {
   sensitivity = 0.002;
   lookAtOffset = new THREE.Vector3(0, 1, 0);
   alignTargetYaw = true;
+  active = true;
   private dragging = false;
   private currentTarget?: GameObject;
   private targetYawOffset = 0;
@@ -20,6 +21,7 @@ export class CameraFollow extends Component {
   private targetEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private desiredPos = new THREE.Vector3();
   private offsetVec = new THREE.Vector3();
+  private orbitEnabledBefore = true;
 
   constructor(init: Partial<CameraFollow> = {}) {
     super();
@@ -27,13 +29,14 @@ export class CameraFollow extends Component {
   }
 
   private onDown = (e: MouseEvent) => {
+    if (!this.active) return;
     if (e.button === 0 || e.button === 2) this.dragging = true;
   };
   private onUp = () => {
     this.dragging = false;
   };
   private onMove = (e: MouseEvent) => {
-    if (!this.dragging) return;
+    if (!this.active || !this.dragging) return;
     this.yaw -= e.movementX * this.sensitivity;
     this.pitch -= e.movementY * this.sensitivity;
     this.pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, this.pitch));
@@ -42,7 +45,10 @@ export class CameraFollow extends Component {
 
   onAdded(game: Game, owner: GameObject) {
     super.onAdded(game, owner);
-    this.game.controls.enabled = false;
+    this.orbitEnabledBefore = this.game.controls.enabled;
+    if (this.active) {
+      this.game.controls.enabled = false;
+    }
     const el = this.game.renderer.domElement;
     el.addEventListener('mousedown', this.onDown);
     addEventListener('mouseup', this.onUp);
@@ -51,11 +57,33 @@ export class CameraFollow extends Component {
   }
 
   onRemoved() {
+    if (this.game && this.active) {
+      this.game.controls.enabled = this.orbitEnabledBefore;
+    }
+    this.dragging = false;
     const el = this.game.renderer.domElement;
     el.removeEventListener('mousedown', this.onDown);
     removeEventListener('mouseup', this.onUp);
     removeEventListener('mousemove', this.onMove);
     el.removeEventListener('contextmenu', this.onCtx);
+  }
+
+  setActive(active: boolean) {
+    if (this.active === active) return;
+    this.active = active;
+    if (!this.game) return;
+    if (active) {
+      this.orbitEnabledBefore = this.game.controls.enabled;
+      this.game.controls.enabled = false;
+      this.syncTargetYawFromCurrent();
+    } else {
+      this.game.controls.enabled = this.orbitEnabledBefore;
+      this.dragging = false;
+    }
+  }
+
+  isActive() {
+    return this.active;
   }
 
   private syncTargetYawFromCurrent() {
@@ -76,6 +104,7 @@ export class CameraFollow extends Component {
   }
 
   update(dt: number) {
+    if (!this.active) return;
     this.ensureTargetCached();
     if (!this.currentTarget) return;
     const cam = this.game.camera;

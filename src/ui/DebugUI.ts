@@ -150,18 +150,61 @@ export async function mountDebugUI(game: Game, options: Options = {}) {
 
   const cameraFolder = pane.addFolder({ title: 'Camera Follow', expanded: true });
   const cameraState = { distance: 3.5, height: 1.4 };
+  const followState = { enabled: true };
+
   cameraFolder
-    .addBinding(cameraState, 'distance', { min: 1, max: 10, step: 0.1, label: 'Distance' })
+    .addBinding(followState, 'enabled', { label: 'Follow aktiv' })
+    .on('change', (ev) => {
+      window.dispatchEvent(
+        new CustomEvent('editor-request-camera-mode', {
+          detail: { mode: ev.value ? 'player' : 'viewer' },
+        }),
+      );
+    });
+
+  cameraFolder
+    .addBinding(cameraState, 'distance', {
+      min: 1,
+      max: 10,
+      step: 0.1,
+      label: 'Distance',
+    })
     .on('change', (ev) => {
       const follow: any = getCameraFollow();
       if (follow) follow.distance = ev.value;
     });
+
   cameraFolder
-    .addBinding(cameraState, 'height', { min: 0, max: 5, step: 0.05, label: 'Height' })
+    .addBinding(cameraState, 'height', {
+      min: 0,
+      max: 5,
+      step: 0.05,
+      label: 'Height',
+    })
     .on('change', (ev) => {
       const follow: any = getCameraFollow();
       if (follow) follow.height = ev.value;
     });
+
+  type CameraModeDetail = { mode: 'player' | 'viewer'; hasFollow?: boolean };
+
+  const syncCameraControls = (detail?: CameraModeDetail) => {
+    const follow: any = getCameraFollow();
+    if (follow) {
+      cameraState.distance = follow.distance ?? cameraState.distance;
+      cameraState.height = follow.height ?? cameraState.height;
+      followState.enabled = typeof follow.isActive === 'function' ? follow.isActive() : follow.active !== false;
+    } else if (detail) {
+      followState.enabled = detail.mode === 'player';
+    }
+    pane.refresh();
+  };
+
+  window.addEventListener('editor-camera-mode-changed', (event) => {
+    syncCameraControls((event as CustomEvent<CameraModeDetail>).detail);
+  });
+
+  syncCameraControls();
 
   const physicsFolder = pane.addFolder({ title: 'Physics Bodies', expanded: false });
   const bodyControls: Array<{

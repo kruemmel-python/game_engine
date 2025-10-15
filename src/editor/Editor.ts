@@ -339,7 +339,7 @@ Pos   X ${fmt(pos.x)}  Y ${fmt(pos.y)}  Z ${fmt(pos.z)}
 Rot   X ${fmtDeg(rot.x)}°  Y ${fmtDeg(rot.y)}°  Z ${fmtDeg(rot.z)}°
 Scale X ${fmt(scale.x)}  Y ${fmt(scale.y)}  Z ${fmt(scale.z)}
         </pre>
-        <div class="hint">F: Startwerte wiederherstellen • Entf: Löschen</div>
+        <div class="hint">F: Startwerte wiederherstellen • C: Kamera wechseln • Entf: Löschen</div>
       `.trim();
     }
 
