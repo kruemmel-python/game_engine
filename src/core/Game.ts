@@ -45,6 +45,25 @@ export class Game {
     const contact = new CANNON.ContactMaterial(this.defaultMat, this.defaultMat, { friction: 0.3, restitution: 0.1 });
     this.world.addContactMaterial(contact);
 
+    // Lighting
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
+    hemiLight.position.set(0, 20, 0);
+    this.scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(8, 12, 6);
+    dirLight.target.position.set(0, 0, 0);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.1;
+    dirLight.shadow.camera.far = 200;
+    dirLight.shadow.camera.left = -25;
+    dirLight.shadow.camera.right = 25;
+    dirLight.shadow.camera.top = 25;
+    dirLight.shadow.camera.bottom = -25;
+    this.scene.add(dirLight);
+    this.scene.add(dirLight.target);
+
     // Grid & ground
     const grid = new THREE.GridHelper(100,100); (grid.material as any).opacity=0.25; (grid.material as any).transparent=true;
     this.scene.add(grid);
