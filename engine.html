@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HTML5 GLB Game Engine – Klassenbasiert + Physik (cannon-es)</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0e0f12; color: #e8eaed; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; }
+    #app { position: absolute; inset: 0; overflow: hidden; }
+    canvas { display: block; }
+
+    .toolbar {
+      position: fixed; top: 12px; left: 12px; right: 12px; z-index: 20;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap; 
+      background: rgba(20,22,26,.6); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    }
+    .toolbar input[type="text"] { flex: 1 1 280px; min-width: 200px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.06); color: #fff; }
+    .toolbar button, .toolbar select, .toolbar label.btn, .toolbar input[type="checkbox"] {
+      background: #1f2937; color: #fff; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 8px 10px; cursor: pointer;
+    }
+    .toolbar button:hover, .toolbar label.btn:hover, .toolbar select:hover { filter: brightness(1.06); }
+    .toolbar .chip { font-size: 12px; opacity: .9; padding: 6px 8px; background: rgba(255,255,255,.08); border-radius: 999px; }
+
+    .drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 50; background: rgba(59,130,246,.08); border: 2px dashed rgba(147,197,253,.45); color: #dbeafe; font-size: 22px; font-weight: 600; backdrop-filter: blur(6px); }
+
+    .hud { position: fixed; right: 12px; bottom: 12px; z-index: 20; pointer-events: none; opacity: .9; display: grid; gap: 6px; justify-items: end; }
+    .hud .pill { pointer-events: auto; background: rgba(31,41,55,.8); border: 1px solid rgba(255,255,255,.08); border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+
+    .credit { position: fixed; left: 14px; bottom: 12px; font-size: 12px; opacity: .7; }
+    a { color: #93c5fd; text-decoration: none; }
+    label.switch { display:inline-flex; align-items:center; gap:6px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div class="toolbar">
+    <label class="btn" for="file">GLB laden</label>
+    <input id="file" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" style="display:none" />
+    <input id="url" type="text" placeholder="oder GLB/GLTF URL einfügen (CORS-aktiv)" />
+    <button id="loadUrl">URL laden</button>
+    <select id="animations" title="Animationen" style="display:none"></select>
+    <span class="chip" id="info">Bereit</span>
+    <button id="resetCam">Kamera zentrieren</button>
+    <button id="wireBtn">Wireframe</button>
+    <label class="switch"><input id="dynBody" type="checkbox" />Dynamischer Körper</label>
+    <label class="switch"><input id="exactCol" type="checkbox" />Präzise Kollision (Hull/Trimesh)</label>
+    <label class="switch"><input id="followCam" type="checkbox" checked />Kamera folgen</label>
+    <button id="saveScene">Szene exportieren</button>
+    <input id="sceneUrl" type="text" placeholder="Scene-JSON URL" />
+    <button id="loadScene">Szene laden</button>
+    <label class="switch"><input id="debugUI" type="checkbox" />Debug UI</label>
+    <button id="snapBtn">Screenshot</button>
+  </div>
+
+  <div class="drop" id="drop">GLB hier ablegen…</div>
+
+  <div class="hud">
+    <div class="pill" id="stats">FPS: —  Poly: —  Draws: —</div>
+    <div class="pill" id="help">WASD: bewegen | Space: hop | Maus: Orbit | Shift+Ziehen: Pan | Rad: Zoom</div>
+  </div>
+  <div class="credit">GLB Game Engine • Klassenbasiert • Orbit + Input • Physik (cannon-es) • Animationen</div>
+
+  <script type="module">
+    // --- Imports ---
+    import * as THREE from "https://unpkg.com/three@0.159.0/build/three.module.js";
+    import { OrbitControls } from "https://unpkg.com/three@0.159.0/examples/jsm/controls/OrbitControls.js";
+    import { GLTFLoader } from "https://unpkg.com/three@0.159.0/examples/jsm/loaders/GLTFLoader.js";
+    import { DRACOLoader } from "https://unpkg.com/three@0.159.0/examples/jsm/loaders/DRACOLoader.js";
+    import { MeshoptDecoder } from "https://unpkg.com/meshoptimizer@0.20.0/meshopt_decoder.module.js";
+    import { RGBELoader } from "https://unpkg.com/three@0.159.0/examples/jsm/loaders/RGBELoader.js";
+    import * as CANNON from "https://cdn.skypack.dev/cannon-es";
+    import { ConvexGeometry } from "https://unpkg.com/three@0.159.0/examples/jsm/geometries/ConvexGeometry.js";
+
+    // ---------- Utility: Input ----------
+    class Input {
+      constructor() {
+        this.keys = new Set();
+        this._onDown = (e)=>{ this.keys.add(e.key.toLowerCase()); };
+        this._onUp = (e)=>{ this.keys.delete(e.key.toLowerCase()); };
+        window.addEventListener('keydown', this._onDown);
+        window.addEventListener('keyup', this._onUp);
+      }
+      axisH(){ return (this.keys.has('d')?1:0) - (this.keys.has('a')?1:0); }
+      axisV(){ return (this.keys.has('w')?1:0) - (this.keys.has('s')?1:0); }
+      pressed(k){ return this.keys.has(k.toLowerCase()); }
+      dispose(){ window.removeEventListener('keydown', this._onDown); window.removeEventListener('keyup', this._onUp); }
+    }
+
+    // ---------- Core: GameObject ----------
+    class Component {
+      constructor(){ this.enabled = true; }
+      onAdded(game, owner) { this.game = game; this.owner = owner; }
+      onRemoved() {}
+      update(dt) {}
+    }
+
+    class GameObject {
+      constructor({ name='GameObject', object3D=null, body=null, components=[] }){
+        this.name = name;
+        this.object3D = object3D || new THREE.Object3D();
+        this.body = body; // CANNON.Body optional
+        this.components = [];
+        components.forEach(c=>this.addComponent(c));
+      }
+      addedTo(game){ this.game = game; this.components.forEach(c=>c.onAdded(game, this)); }
+      addComponent(comp){ this.components.push(comp); if(this.game) comp.onAdded(this.game, this); }
+      removeComponent(comp){ const i=this.components.indexOf(comp); if(i>=0){ this.components.splice(i,1); comp.onRemoved(); } }
+      update(dt){
+        // physics -> visual sync
+        if (this.body) {
+          const p = this.body.position; const q = this.body.quaternion;
+          this.object3D.position.set(p.x, p.y, p.z);
+          this.object3D.quaternion.set(q.x, q.y, q.z, q.w);
+        }
+        for (const comp of this.components) { if (comp.enabled) comp.update(dt); }
+      }
+      dispose(){ /* TODO: clean materials/geometries if needed */ }
+    }
+
+    // ---------- Components ----------
+    class GroundSensorComponent extends Component {
+      constructor({ epsilon = 0.05 }={}){ super(); this.epsilon = epsilon; this.grounded = false; this.normal = new CANNON.Vec3(); }
+      update(){
+        const body = this.owner.body; if (!body) return;
+        const world = this.game.world; const from = body.position.clone();
+        const half = body._halfHeight || 0.5; const to = new CANNON.Vec3(from.x, from.y - (half + this.epsilon), from.z);
+        const result = new CANNON.RaycastResult();
+        this.grounded = false;
+        world.raycastClosest(from, to, { skipBackfaces: true }, result);
+        if (result.hasHit) { this.grounded = true; this.normal.copy(result.hitNormalWorld); }
+      }
+    }
+
+    class PlayerControllerComponent extends Component {
+      constructor({ speed = 8, jumpStrength = 4.5 }){ super(); this.speed = speed; this.jumpStrength = jumpStrength; this._wantJump = false; }
+      update(dt){
+        const body = this.owner.body; if (!body) return;
+        const input = this.game.input;
+        const sensor = this.owner.components.find(c=>c instanceof GroundSensorComponent);
+        const vAxis = input.axisV(); const hAxis = input.axisH();
+        // Camera-relative move
+        const forward = new THREE.Vector3(); this.game.camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).negate();
+        const move = new THREE.Vector3().addScaledVector(forward, vAxis).addScaledVector(right, hAxis);
+        if (move.lengthSq()>0){ move.normalize(); const f = new CANNON.Vec3(move.x*this.speed, 0, move.z*this.speed); body.applyForce(f, body.position); }
+        // Jump request
+        if (input.pressed(' ')) this._wantJump = true; // simple latch
+        if (this._wantJump && sensor?.grounded){ body.applyImpulse(new CANNON.Vec3(0, this.jumpStrength, 0)); this._wantJump = false; }
+        // Gentle damping
+        body.velocity.x *= 0.985; body.velocity.z *= 0.985;
+      }
+      horizontalSpeed(){ const v=this.owner.body?.velocity; return Math.hypot(v?.x||0, v?.z||0); }
+    }
+
+    class AnimationStateMachineComponent extends Component {
+      constructor({ root, clips=[] }){ super(); this.root = root; this.clips = clips; this.mixer = null; this.current = null; this.actions = {}; }
+      onAdded(game, owner){
+        super.onAdded(game, owner);
+        if (!this.clips || this.clips.length===0) return;
+        this.mixer = new THREE.AnimationMixer(this.root || owner.object3D);
+        const get = (nameLike)=> this.clips.find(c=> (c.name||'').toLowerCase().includes(nameLike));
+        const idle = get('idle') || this.clips[0];
+        const walk = get('walk') || get('run') || this.clips[0];
+        const jump = get('jump') || this.clips[0];
+        this.map = { idle, walk, jump };
+        for (const [k,clip] of Object.entries(this.map)) { this.actions[k] = this.mixer.clipAction(clip); }
+        this._play('idle', 0);
+      }
+      _play(name, fade=0.12){ if (this.current===name || !this.actions[name]) return; const next = this.actions[name]; const prev = this.actions[this.current]; prev?.fadeOut?.(fade); next.reset().play().fadeIn(fade); this.current = name; }
+      update(dt){ if (!this.mixer) return; this.mixer.update(dt);
+        const ctrl = this.owner.components.find(c=>c instanceof PlayerControllerComponent);
+        const sensor = this.owner.components.find(c=>c instanceof GroundSensorComponent);
+        const moving = (ctrl?.horizontalSpeed()||0) > 0.25;
+        if (!sensor?.grounded) this._play('jump');
+        else if (moving) this._play('walk');
+        else this._play('idle');
+      }
+    }
+
+    // ---------- Camera Follow ----------
+    class CameraFollowComponent extends Component {
+      constructor({ target=null, distance=3.5, height=1.4, yaw=0, pitch=-10*Math.PI/180, sensitivity=0.002, lookAtOffset=new THREE.Vector3(0,1.0,0) }){
+        super(); this.target=target; this.distance=distance; this.height=height; this.yaw=yaw; this.pitch=pitch; this.sensitivity=sensitivity; this.lookAtOffset=lookAtOffset; this._drag=false;
+        this._onDown=(e)=>{ if (e.button===0 || e.button===2) this._drag=true; };
+        this._onUp=()=>{ this._drag=false; };
+        this._onMove=(e)=>{ if(!this._drag) return; this.yaw -= e.movementX * this.sensitivity; this.pitch -= e.movementY * this.sensitivity; this.pitch = Math.max(-Math.PI/2+0.05, Math.min(Math.PI/2-0.05, this.pitch)); };
+        this._onContext=(e)=> e.preventDefault();
+      }
+      onAdded(game){ super.onAdded(game); if (game.controls) game.controls.enabled = false; const el = game.renderer.domElement; el.addEventListener('mousedown', this._onDown); window.addEventListener('mouseup', this._onUp); window.addEventListener('mousemove', this._onMove); el.addEventListener('contextmenu', this._onContext); }
+      onRemoved(){ const el = this.game?.renderer?.domElement; if(!el) return; el.removeEventListener('mousedown', this._onDown); window.removeEventListener('mouseup', this._onUp); window.removeEventListener('mousemove', this._onMove); el.removeEventListener('contextmenu', this._onContext); }
+      update(dt){ if (!this.target) return; const cam=this.game.camera; const t=this.target.object3D.position;
+        const cosP=Math.cos(this.pitch), sinP=Math.sin(this.pitch); const cosY=Math.cos(this.yaw), sinY=Math.sin(this.yaw);
+        const offset = new THREE.Vector3(
+          this.distance * cosP * sinY,
+          this.height + this.distance * sinP,
+          this.distance * cosP * cosY
+        );
+        const desired = new THREE.Vector3().copy(t).add(offset);
+        cam.position.lerp(desired, 1 - Math.exp(-10*dt));
+        this.game.controls.target.copy(new THREE.Vector3(t.x, t.y, t.z).add(this.lookAtOffset));
+      }
+    }
+
+    class EventBus {
+      constructor(){ this.map = new Map(); }
+      on(type, fn){ const arr = this.map.get(type) || []; arr.push(fn); this.map.set(type, arr); return ()=>this.off(type, fn); }
+      off(type, fn){ const arr=this.map.get(type)||[]; const i=arr.indexOf(fn); if(i>=0) arr.splice(i,1); }
+      emit(type, payload){ const arr=this.map.get(type)||[]; for(const fn of arr) try{ fn(payload); }catch(e){ console.error(e); } }
+    }
+
+    // ---------- Audio Components ----------
+    class AudioComponent extends Component {
+      constructor({ url, loop=false, autoplay=false, positional=true, refDistance=5 }){
+        super(); this.url=url; this.loop=loop; this.autoplay=autoplay; this.positional=positional; this.refDistance=refDistance; this.sound=null; this._loaded=false;
+      }
+      async onAdded(game, owner){ super.onAdded(game, owner);
+        const audio = this.positional ? new THREE.PositionalAudio(game.listener) : new THREE.Audio(game.listener);
+        this.sound = audio; if (this.positional) audio.setRefDistance(this.refDistance);
+        owner.object3D.add(audio);
+        try {
+          const buffer = await new Promise((res,rej)=> game.audioLoader.load(this.url, res, undefined, rej));
+          audio.setBuffer(buffer); audio.setLoop(this.loop);
+          this._loaded = true; if (this.autoplay) audio.play();
+        } catch(e){ console.error('Audio load failed', e); }
+      }
+      play(){ if (this._loaded) this.sound?.play(); }
+      stop(){ this.sound?.stop(); }
+    }
+
+    class CollisionSoundComponent extends Component {
+      constructor({ url, minSpeed=0.5, cooldown=0.1 }){ super(); this.url=url; this.minSpeed=minSpeed; this.cooldown=cooldown; this._last=0; this.audio=null; }
+      async onAdded(game, owner){ super.onAdded(game, owner);
+        this.audio = new AudioComponent({ url: this.url, positional:true, refDistance:4 });
+        owner.addComponent(this.audio);
+        this.off = game.events.on('collision', ({ self, other, raw })=>{
+          if (self!==owner) return; const rel = raw.contact.getImpactVelocityAlongNormal();
+          const now = performance.now()/1000; if (rel>this.minSpeed && now - this._last > this.cooldown){ this.audio.play(); this._last = now; }
+        });
+      }
+      onRemoved(){ this.off?.(); }
+    }
+
+    // ---------- Prefabs ----------
+    class PrefabRegistry { constructor(){ this.map = new Map(); }
+      register(name, factory){ this.map.set(name, factory); }
+      async instantiate(name, game, params){ const f = this.map.get(name); if(!f) throw new Error('Prefab not found: '+name); return await f(game, params); }
+    }
+
+    class Game {
+      constructor(container){
+        this.container = container;
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.0;
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(this.renderer.domElement);
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x0b0c10);
+
+        this.camera = new THREE.PerspectiveCamera(60, 1, 0.01, 3000);
+        this.camera.position.set(6, 4, 7);
+        // Audio listener
+        this.listener = new THREE.AudioListener();
+        this.camera.add(this.listener);
+        this.audioLoader = new THREE.AudioLoader();
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true; this.controls.dampingFactor = 0.05; this.controls.screenSpacePanning = true;
+
+        // Grid + ground visual
+        const grid = new THREE.GridHelper(100, 100, 0x4b5563, 0x1f2937); grid.material.opacity = 0.25; grid.material.transparent = true; this.scene.add(grid);
+        const groundGeo = new THREE.PlaneGeometry(500, 500);
+        const groundMat = new THREE.ShadowMaterial({ opacity: 0.25 });
+        this.ground = new THREE.Mesh(groundGeo, groundMat); this.ground.rotation.x = -Math.PI/2; this.ground.receiveShadow = true; this.scene.add(this.ground);
+
+        // Lights
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x303030, 0.9); this.scene.add(hemi);
+        const dir = new THREE.DirectionalLight(0xffffff, 2.2); dir.position.set(8, 12, 8); dir.castShadow = true; dir.shadow.mapSize.set(2048, 2048); dir.shadow.normalBias = 0.03; this.scene.add(dir);
+
+        // Environment HDRI
+        this.pmrem = new THREE.PMREMGenerator(this.renderer); this.pmrem.compileEquirectangularShader();
+        new RGBELoader().setDataType(THREE.UnsignedByteType).setPath('https://unpkg.com/@pmndrs/assets@1.0.5/hdr/').load('venice_sunset_1k.hdr', (tex)=>{
+          const env = this.pmrem.fromEquirectangular(tex).texture; tex.dispose(); this.scene.environment = env; });
+
+        // Physics world
+        this.world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.81,0) });
+        this.world.broadphase = new CANNON.SAPBroadphase(this.world);
+        this.world.allowSleep = true;
+        this.defaultMat = new CANNON.Material('default');
+        const contact = new CANNON.ContactMaterial(this.defaultMat, this.defaultMat, { friction: 0.3, restitution: 0.1 });
+        this.world.addContactMaterial(contact);
+        this.events = new EventBus();
+        // Static ground body
+        const groundBody = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.defaultMat, shape: new CANNON.Plane() });
+        groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+        this.world.addBody(groundBody);
+
+        // Collections
+        this.objects = [];
+        this.input = new Input();
+
+        // Loaders
+        this.gltfLoader = new GLTFLoader();
+        const draco = new DRACOLoader(); draco.setDecoderPath('https://unpkg.com/three@0.159.0/examples/jsm/libs/draco/');
+        this.gltfLoader.setDRACOLoader(draco); this.gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+
+        // Resize
+        window.addEventListener('resize', ()=>this.resize(), { passive: true });
+        this.resize();
+
+        // Loop
+        this.statsEl = document.getElementById('stats');
+        this.last = performance.now(); this.acc = 0; this.dtFixed = 1/60; // fixed timestep for physics
+        requestAnimationFrame((t)=>this.tick(t));
+
+        // Quality fallback
+        if (navigator && 'hardwareConcurrency' in navigator && navigator.hardwareConcurrency <= 4){ this.renderer.shadowMap.enabled = false; this.ground.visible = false; document.getElementById('info').textContent = 'Low-power Modus: Schatten aus'; }
+      }
+
+      add(go){
+        this.objects.push(go);
+        if (go.body) { go.body.__owner = go; go.body.addEventListener('collide', (e)=>{ this.events.emit('collision', { self: go, other: e.body.__owner, contact: e.contact, raw: e }); }); }
+        this.scene.add(go.object3D); go.addedTo(this);
+      }
+      remove(go){ const i=this.objects.indexOf(go); if(i>=0) this.objects.splice(i,1); this.scene.remove(go.object3D); go.dispose(); }
+
+      resize(){ const w = this.container.clientWidth || window.innerWidth; const h = this.container.clientHeight || window.innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
+
+      frameObject(obj){
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = new THREE.Vector3(); box.getSize(size);
+        const center = new THREE.Vector3(); box.getCenter(center);
+        obj.position.sub(center);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const dist = maxDim * 1.6 / Math.tan((Math.PI * this.camera.fov)/360);
+        const dir = new THREE.Vector3(1,0.35,1).normalize();
+        const target = new THREE.Vector3(0, Math.max(0.5, size.y*0.5), 0);
+        this.camera.position.copy(target.clone().add(dir.multiplyScalar(dist)));
+        this.controls.target.copy(target); this.controls.update();
+        this.ground.position.y = -box.min.y * 0.02;
+      }
+
+      // ----- Collider Utilities -----
+      _mergeWorldVertices(object3D){
+        const temp = new THREE.Matrix4();
+        const vertices = [];
+        object3D.updateWorldMatrix(true, true);
+        object3D.traverse((obj)=>{
+          if (obj.isMesh && obj.geometry){
+            const geom = obj.geometry.clone();
+            geom.applyMatrix4(obj.matrixWorld);
+            const pos = geom.attributes.position;
+            for (let i=0;i<pos.count;i++) vertices.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)));
+          }
+        });
+        return vertices;
+      }
+      _buildTrimesh(object3D){
+        // Build combined indexed geometry for static meshes
+        const positions = [];
+        const indices = [];
+        let indexOffset = 0;
+        object3D.updateWorldMatrix(true,true);
+        object3D.traverse(obj=>{
+          if (obj.isMesh && obj.geometry){
+            const g = obj.geometry.clone(); g.applyMatrix4(obj.matrixWorld);
+            const pos = g.attributes.position;
+            const idx = g.index ? g.index.array : Array.from({length: pos.count}, (_,i)=>i);
+            for (let i=0;i<pos.count;i++){ positions.push(pos.getX(i), pos.getY(i), pos.getZ(i)); }
+            for (let i=0;i<idx.length;i++){ indices.push(idx[i] + indexOffset); }
+            indexOffset += pos.count;
+          }
+        });
+        return new CANNON.Trimesh(new Float32Array(positions), new Uint32Array(indices));
+      }
+      _buildConvex(object3D){
+        const verts = this._mergeWorldVertices(object3D);
+        if (verts.length < 4) return null;
+        const hullGeo = new ConvexGeometry(verts);
+        // Build unique vertex list
+        const pos = hullGeo.attributes.position;
+        const points = [];
+        for (let i=0;i<pos.count;i++) points.push(new CANNON.Vec3(pos.getX(i), pos.getY(i), pos.getZ(i)));
+        // Faces as triangles
+        const faces = [];
+        const idx = hullGeo.index ? hullGeo.index.array : Array.from({length: pos.count}, (_,i)=>i);
+        for (let i=0;i<idx.length; i+=3){ faces.push([idx[i], idx[i+1], idx[i+2]]); }
+        return new CANNON.ConvexPolyhedron({ vertices: points, faces });
+      }
+      createBodyFromObject(object3D, { dynamic=false, mass=1, exact=false }){
+        let shape;
+        if (exact){
+          if (dynamic){ shape = this._buildConvex(object3D); }
+          else { shape = this._buildTrimesh(object3D); }
+        }
+        if (!shape){
+          const box = new THREE.Box3().setFromObject(object3D); const size = new THREE.Vector3(); box.getSize(size);
+          shape = new CANNON.Box(new CANNON.Vec3(size.x/2, size.y/2, size.z/2));
+        }
+        const body = new CANNON.Body({ mass: dynamic? mass: 0, material: this.defaultMat, shape });
+        // approximate spawn height
+        const bbox = new THREE.Box3().setFromObject(object3D); const size = new THREE.Vector3(); bbox.getSize(size);
+        body.position.set(0, Math.max(0.01, size.y/2), 0);
+        body.angularDamping = 0.2; body.linearDamping = 0.1;
+        body._halfHeight = size.y/2;
+        return body;
+      }
+
+      async loadGLBFromArrayBuffer(buffer, label, { dynamic=false }={}){
+        document.getElementById('info').textContent = `Lade: ${label}`;
+        return new Promise((resolve,reject)=>{
+          this.gltfLoader.parse(buffer, '', (gltf)=>{ this._onGLTFLoaded(gltf, label, { dynamic, exact: false }); resolve(gltf); }, (e)=>{ console.error(e); reject(e); });
+        });
+      }
+
+      async loadGLB(url, { dynamic=false }={}){
+        document.getElementById('info').textContent = 'Lade URL…';
+        return new Promise((resolve,reject)=>{
+          this.gltfLoader.load(url, (gltf)=>{ this._onGLTFLoaded(gltf, url, { dynamic }); resolve(gltf); }, undefined, (e)=>{ console.error(e); reject(e); });
+        });
+      }
+
+      _onGLTFLoaded(gltf, label, { dynamic, exact=false }){
+        const root = gltf.scene;
+        root.traverse(obj=>{ if(obj.isMesh){ obj.castShadow = true; obj.receiveShadow = true; } });
+        this.frameObject(root);
+
+        // Physics body from bounds
+        const body = this.createBodyFromObject(root, { dynamic, mass: 3, exact });
+        this.world.addBody(body);
+
+        // Animation setup
+        let mixer = null, activeAction = null;
+        if (gltf.animations?.length){
+          mixer = new THREE.AnimationMixer(root);
+          const sel = document.getElementById('animations');
+          sel.innerHTML=''; gltf.animations.forEach((clip,i)=>{ const opt=document.createElement('option'); opt.value=String(i); opt.textContent = clip.name||`Clip ${i+1}`; sel.appendChild(opt); });
+          sel.style.display='';
+          const play = (clip)=>{ activeAction?.fadeOut?.(0.1); activeAction = mixer.clipAction(clip); activeAction.reset(); activeAction.play(); activeAction.fadeIn(0.1); };
+          play(gltf.animations[0]);
+          sel.onchange = ()=> play(gltf.animations[Number(sel.value)]);
+        } else { document.getElementById('animations').style.display='none'; }
+
+        // Components assembly
+        const components = [];
+        if (dynamic){
+          components.push(new GroundSensorComponent());
+          components.push(new PlayerControllerComponent({ speed: 8, jumpStrength: 4.5 }));
+        }
+        if (gltf.animations?.length){ components.push(new AnimationStateMachineComponent({ root, clips: gltf.animations })); }
+
+        const go = new GameObject({ name: label, object3D: root, body, components });
+        this.add(go);
+
+        document.getElementById('info').textContent = `Geladen: ${label}`;
+      }
+
+      tick(now){
+        requestAnimationFrame((t)=>this.tick(t));
+        const dt = Math.min(0.05, (now - this.last)/1000); this.last = now; this.acc += dt;
+        // fixed-step physics
+        while (this.acc >= this.dtFixed){ this.world.step(this.dtFixed); this.acc -= this.dtFixed; }
+        // update objects
+        for (const o of this.objects) o.update(dt, this);
+        // render
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+        // stats
+        const info = this.renderer.info; const fps = (1/dt)||0; this.statsEl.textContent = `FPS: ${fps.toFixed(0)}  Poly: ${info.render.triangles}  Draws: ${info.render.calls}`;
+      }
+    }
+
+    // ---------- Bootstrap + UI wiring ----------
+    const container = document.getElementById('app');
+    const game = new Game(container);
+
+    // Prefab registry example
+    game.prefabs = new PrefabRegistry();
+    // Example prefab: simple pickup sphere
+    game.prefabs.register('PickupSphere', async (game, { position=[0,1,0] }={})=>{
+      const mat = new THREE.MeshStandardMaterial({ metalness: 0.1, roughness: 0.2 });
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), mat);
+      mesh.position.set(...position);
+      const body = new CANNON.Body({ mass: 0 }); // static trigger-like
+      const go = new GameObject({ name: 'PickupSphere', object3D: mesh, body });
+      // Play a sound when the player collides with it and emit pickup event
+      go.addComponent(new CollisionSoundComponent({ url: 'https://cdn.jsdelivr.net/gh/AI-Resources/audio/placeholders/pick.wav', minSpeed: 0.1 }));
+      game.add(go); return go;
+    });
+
+    // Scene serialization helpers attached post-class to avoid large patching
+    Game.prototype.toSceneJSON = function(){
+      const items = [];
+      for (const o of this.objects){
+        if (o.name === 'CameraRig') continue;
+        const t = o.object3D;
+        items.push({
+          name: o.name,
+          position: [t.position.x, t.position.y, t.position.z],
+          rotation: [t.quaternion.x, t.quaternion.y, t.quaternion.z, t.quaternion.w],
+          scale: [t.scale.x, t.scale.y, t.scale.z],
+          dynamic: (o.body?.mass||0) > 0,
+          exact: !!o.body && !(o.body.shapes?.[0] instanceof CANNON.Box),
+          // Source hints (best-effort): use userData.source or prefab
+          source: o.object3D.userData?.source || null,
+          prefab: o.object3D.userData?.prefab || null
+        });
+      }
+      return { version: 1, items };
+    };
+
+    Game.prototype.downloadSceneJSON = function(){ const data = JSON.stringify(this.toSceneJSON(), null, 2); const blob = new Blob([data], {type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='scene.json'; a.click(); URL.revokeObjectURL(url); };
+
+    Game.prototype.loadScene = async function(input){
+      const data = typeof input === 'string' ? await (await fetch(input)).json() : input;
+      for (const entry of data.items){ await this._instantiateEntry(entry); }
+    };
+
+    Game.prototype._instantiateEntry = async function(entry){
+      if (entry.prefab){ return await this.prefabs.instantiate(entry.prefab, this, entry); }
+      if (entry.source){ const gltf = await this.loadGLB(entry.source, { dynamic: !!entry.dynamic, exact: !!entry.exact }); const go = this.objects[this.objects.length-1];
+        // apply transform
+        if (entry.position) go.object3D.position.set(...entry.position);
+        if (entry.rotation) go.object3D.quaternion.set(...entry.rotation);
+        if (entry.scale) go.object3D.scale.set(...entry.scale);
+        go.object3D.userData.source = entry.source; return go; }
+      // fallback: empty object
+      const go = new GameObject({ name: entry.name||'Empty' });
+      if (entry.position) go.object3D.position.set(...entry.position);
+      if (entry.rotation) go.object3D.quaternion.set(...entry.rotation);
+      if (entry.scale) go.object3D.scale.set(...entry.scale);
+      this.add(go); return go;
+    };
+
+    // UI elements
+    const fileInput = document.getElementById('file');
+    const urlInput = document.getElementById('url');
+    const loadBtn = document.getElementById('loadUrl');
+    const resetCam = document.getElementById('resetCam');
+    const wireBtn = document.getElementById('wireBtn');
+    const snapBtn = document.getElementById('snapBtn');
+    const dynBody = document.getElementById('dynBody');
+    const exactCol = document.getElementById('exactCol');
+    const followCam = document.getElementById('followCam');
+    const saveSceneBtn = document.getElementById('saveScene');
+    const loadSceneBtn = document.getElementById('loadScene');
+    const sceneUrlInput = document.getElementById('sceneUrl');
+    const debugUICheck = document.getElementById('debugUI');
+
+    function setWireframe(on){ game.objects.forEach(o=>{ o.object3D.traverse(obj=>{ if(obj.isMesh){ const mats = Array.isArray(obj.material)? obj.material: [obj.material]; mats.forEach(m=>{ if(m && 'wireframe' in m){ m.wireframe = on; m.needsUpdate = true; } }); } }); }); }
+
+    function screenshot(){ const prev = game.renderer.getPixelRatio(); game.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); game.renderer.render(game.scene, game.camera); game.renderer.setPixelRatio(prev); const uri = game.renderer.domElement.toDataURL('image/png'); const a = document.createElement('a'); a.href = uri; a.download = 'screenshot.png'; a.click(); }
+
+    fileInput.addEventListener('change', async (e)=>{ const f=e.target.files[0]; if(!f) return; const buf = await f.arrayBuffer(); const gltf = await game.loadGLBFromArrayBuffer(buf, f.name, { dynamic: dynBody.checked, exact: exactCol.checked });
+      // Add camera follow on player
+      if (dynBody.checked && followCam.checked) {
+        const player = game.objects[game.objects.length-1];
+        const camGO = new GameObject({ name: 'CameraRig', components: [ new CameraFollowComponent({ target: player }) ] });
+        game.add(camGO);
+      }
+    }); await game.loadGLBFromArrayBuffer(buf, f.name, { dynamic: dynBody.checked }); });
+    loadBtn.addEventListener('click', async ()=>{ const url = urlInput.value.trim(); if(url) { const gltf = await game.loadGLB(url, { dynamic: dynBody.checked, exact: exactCol.checked });
+      if (dynBody.checked && followCam.checked) {
+        const player = game.objects[game.objects.length-1];
+        const camGO = new GameObject({ name: 'CameraRig', components: [ new CameraFollowComponent({ target: player }) ] });
+        game.add(camGO);
+      }
+    }}); if(url) game.loadGLB(url, { dynamic: dynBody.checked }); });
+    resetCam.addEventListener('click', ()=>{ if (game.objects[game.objects.length-1]) game.frameObject(game.objects[game.objects.length-1].object3D); });
+    let wire=false; wireBtn.addEventListener('click', ()=>{ wire=!wire; setWireframe(wire); });
+    snapBtn.addEventListener('click', screenshot);
+
+    saveSceneBtn.addEventListener('click', ()=> game.downloadSceneJSON());
+    loadSceneBtn.addEventListener('click', async ()=>{ const url = sceneUrlInput.value.trim(); if(url) await game.loadScene(url); });
+
+    // Drag & drop
+    const drop = document.getElementById('drop');
+    function setDrop(on){ drop.style.display = on? 'flex':'none'; }
+    window.addEventListener('dragover', (e)=>{ e.preventDefault(); setDrop(true); });
+    window.addEventListener('dragleave', (e)=>{ if(e.target===drop) setDrop(false); });
+    window.addEventListener('drop', async (e)=>{ e.preventDefault(); setDrop(false); const f = e.dataTransfer.files?.[0]; if (f){ const buf = await f.arrayBuffer(); await game.loadGLBFromArrayBuffer(buf, f.name, { dynamic: dynBody.checked }); } });
+
+    // Optional: Sample
+    // game.loadGLB('https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb', { dynamic: false });
+
+    // Debug UI (Tweakpane) lazy init
+    async function enableDebugUI(){
+      if (enableDebugUI._ready) return; enableDebugUI._ready=true;
+      const mod = await import('https://cdn.skypack.dev/tweakpane');
+      const pane = new mod.Pane({ title: 'Debug' });
+      const cam = { distance: 3.5, height: 1.4 };
+      const last = ()=> game.objects.find(o=>o.name==='CameraRig');
+      pane.addBinding(cam, 'distance', {min:1, max:10}).on('change', ()=>{ const rig=last(); const comp=rig?.components?.find(c=>c.constructor?.name==='CameraFollowComponent'); if(comp) comp.distance = cam.distance; });
+      pane.addBinding(cam, 'height', {min:0, max:5}).on('change', ()=>{ const rig=last(); const comp=rig?.components?.find(c=>c.constructor?.name==='CameraFollowComponent'); if(comp) comp.height = cam.height; });
+    }
+    debugUICheck.addEventListener('change', (e)=>{ if (e.target.checked) enableDebugUI(); });
