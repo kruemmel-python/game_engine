@@ -86,6 +86,9 @@ export class Game {
       (go.body as any).__owner = go;
       (go.body as any).addEventListener('collide', (e: any)=> this.events.emit('collision', { self: go, other: (e.body as any).__owner, raw: e }));
     }
+    go.object3D.traverse((node) => {
+      node.userData.__gameObject = go;
+    });
     go.addedTo(this);
     this.objects.push(go);
     this.scene.add(go.object3D);
@@ -93,6 +96,9 @@ export class Game {
   remove(go: GameObject){
     const i=this.objects.indexOf(go);
     if(i>=0) this.objects.splice(i,1);
+    go.object3D.traverse((node) => {
+      if (node.userData.__gameObject === go) delete node.userData.__gameObject;
+    });
     this.scene.remove(go.object3D);
     go.game = undefined;
   }
