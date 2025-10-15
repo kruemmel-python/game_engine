@@ -18,6 +18,19 @@ export class Game {
   pmrem: PMREMGenerator;
   listener: THREE.AudioListener;
   audioLoader = new THREE.AudioLoader();
+  hemisphereLight: THREE.HemisphereLight;
+  directionalLight: THREE.DirectionalLight;
+  editorHandles: {
+    keyLight?: {
+      go: GameObject;
+      helper: THREE.DirectionalLightHelper;
+      target: THREE.Object3D;
+    };
+    fillLight?: {
+      go: GameObject;
+      helper: THREE.HemisphereLightHelper;
+    };
+  } = {};
 
   private last = performance.now(); private acc = 0; private dtFixed = 1/60;
   paused = false;
@@ -57,23 +70,11 @@ export class Game {
     this.world.addContactMaterial(contact);
 
     // Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
-    hemiLight.position.set(0, 20, 0);
-    this.scene.add(hemiLight);
+    this.hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
+    this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.1);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
-    dirLight.position.set(8, 12, 6);
-    dirLight.target.position.set(0, 0, 0);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(2048, 2048);
-    dirLight.shadow.camera.near = 0.1;
-    dirLight.shadow.camera.far = 200;
-    dirLight.shadow.camera.left = -25;
-    dirLight.shadow.camera.right = 25;
-    dirLight.shadow.camera.top = 25;
-    dirLight.shadow.camera.bottom = -25;
-    this.scene.add(dirLight);
-    this.scene.add(dirLight.target);
+    this.setupFillLight();
+    this.setupKeyLight();
 
     // Grid & ground
     const grid = new THREE.GridHelper(100,100); (grid.material as any).opacity=0.25; (grid.material as any).transparent=true;
@@ -95,6 +96,93 @@ export class Game {
     this.resize(); requestAnimationFrame((t)=> this.tick(t));
   }
 
+  private setupFillLight(){
+    const rig = new THREE.Object3D();
+    rig.name = 'Fill Light';
+    rig.position.set(0, 20, 0);
+
+    this.hemisphereLight.position.set(0, 0, 0);
+    rig.add(this.hemisphereLight);
+
+    const helper = new THREE.HemisphereLightHelper(this.hemisphereLight, 3, 0x22d3ee);
+    helper.name = 'Fill Light Helper';
+    helper.userData.__editorHelper = true;
+    rig.add(helper);
+
+    const handle = new THREE.Mesh(
+      new THREE.SphereGeometry(0.4, 20, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0x22d3ee,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.85,
+      }),
+    );
+    handle.name = 'Fill Light Handle';
+    handle.userData.__editorHelper = true;
+    rig.add(handle);
+
+    const go = new GameObject({ name: 'Fill Light', object3D: rig, editorOnly: true });
+    this.add(go);
+    helper.update();
+
+    this.editorHandles.fillLight = { go, helper };
+  }
+
+  private setupKeyLight(){
+    const rig = new THREE.Object3D();
+    rig.name = 'Key Light';
+    rig.position.set(8, 12, 6);
+
+    this.directionalLight.castShadow = true;
+    this.directionalLight.shadow.mapSize.set(2048, 2048);
+    this.directionalLight.shadow.camera.near = 0.1;
+    this.directionalLight.shadow.camera.far = 200;
+    this.directionalLight.shadow.camera.left = -25;
+    this.directionalLight.shadow.camera.right = 25;
+    this.directionalLight.shadow.camera.top = 25;
+    this.directionalLight.shadow.camera.bottom = -25;
+
+    this.directionalLight.position.set(0, 0, 0);
+    rig.add(this.directionalLight);
+
+    const target = new THREE.Object3D();
+    target.name = 'Key Light Target';
+    target.position.set(0, 0, -1);
+    target.visible = false;
+    rig.add(target);
+    this.directionalLight.target = target;
+
+    const helper = new THREE.DirectionalLightHelper(this.directionalLight, 4, 0xf97316);
+    helper.name = 'Key Light Helper';
+    helper.userData.__editorHelper = true;
+    rig.add(helper);
+
+    const handle = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 20, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0xf97316,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.85,
+      }),
+    );
+    handle.name = 'Key Light Handle';
+    handle.userData.__editorHelper = true;
+    rig.add(handle);
+
+    rig.lookAt(0, 0, 0);
+    const origin = new THREE.Vector3();
+    const distance = rig.position.distanceTo(origin);
+    target.position.set(0, 0, -Math.max(distance, 0.1));
+    helper.update();
+
+    const go = new GameObject({ name: 'Key Light', object3D: rig, editorOnly: true });
+    this.add(go);
+
+    this.editorHandles.keyLight = { go, helper, target };
+  }
+
   add(go: GameObject){
     if (go.body){
       (go.body as any).__owner = go;
@@ -108,6 +196,7 @@ export class Game {
     this.objects.push(go);
     this.scene.add(go.object3D);
     this.cameraCollisionDirty = true;
+    this.events.emit('object-added', go);
   }
   remove(go: GameObject){
     const i=this.objects.indexOf(go);
@@ -121,6 +210,7 @@ export class Game {
     this.scene.remove(go.object3D);
     go.game = undefined;
     this.cameraCollisionDirty = true;
+    this.events.emit('object-removed', go);
   }
 
   invalidateCameraCollision(){
@@ -168,7 +258,7 @@ export class Game {
     this.cameraCollisionMeshes.length = 0;
     for (const go of this.objects) {
       go.object3D.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh && obj.visible) {
+        if ((obj as THREE.Mesh).isMesh && obj.visible && !(obj as any).userData?.__editorHelper) {
           this.cameraCollisionMeshes.push(obj);
         }
       });

@@ -8,10 +8,12 @@ export class GameObject {
   body?: CANNON.Body;
   components: Component[] = [];
   game?: Game;
-  constructor(opts: {name?:string, object3D?:THREE.Object3D, body?:CANNON.Body, components?: Component[]} = {}){
+  editorOnly: boolean;
+  constructor(opts: {name?:string, object3D?:THREE.Object3D, body?:CANNON.Body, components?: Component[], editorOnly?: boolean} = {}){
     this.name = opts.name ?? 'GameObject';
     this.object3D = opts.object3D ?? new THREE.Object3D();
     this.body = opts.body;
+    this.editorOnly = opts.editorOnly ?? false;
     (opts.components ?? []).forEach(c => this.addComponent(c));
   }
   addedTo(game: Game){
