@@ -108,8 +108,11 @@ async function spawnGLB(
 })();
 
 function setupScenePanel(game: Game, editor: Editor) {
-  const style = document.createElement('style');
-  style.textContent = `
+  const styleId = 'editor-scene-panel-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
     .editor-scene-panel {
       position: fixed;
       top: 16px;
@@ -183,15 +186,108 @@ function setupScenePanel(game: Game, editor: Editor) {
       opacity: 0.75;
       line-height: 1.4;
     }
+    .editor-scene-panel__close {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      border: none;
+      background: rgba(15, 23, 42, 0.65);
+      color: inherit;
+      border-radius: 999px;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .editor-scene-panel__close:hover {
+      background: rgba(30, 41, 59, 0.85);
+    }
+    .editor-toggle-stack {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 45;
+      pointer-events: none;
+    }
+    .editor-toggle-button {
+      pointer-events: auto;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(30, 64, 175, 0.75);
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: filter 0.15s ease;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35);
+    }
+    .editor-toggle-button:hover {
+      filter: brightness(1.1);
+    }
+    .editor-toggle-button[data-role="debug"] {
+      background: rgba(6, 95, 70, 0.75);
+    }
+    .editor-toggle-button[data-role="scene"] {
+      background: rgba(30, 64, 175, 0.75);
+    }
+    .editor-scene-panel[data-hidden="true"] {
+      display: none;
+    }
   `;
-  document.head.appendChild(style);
+    document.head.appendChild(style);
+  }
 
   const panel = document.createElement('div');
   panel.className = 'editor-scene-panel';
+  panel.dataset.hidden = 'false';
+
+  const ensureToggleStack = () => {
+    let stack = document.querySelector<HTMLDivElement>('.editor-toggle-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'editor-toggle-stack';
+      document.body.appendChild(stack);
+    }
+    return stack;
+  };
+
+  const toggleStack = ensureToggleStack();
+  const showButton = document.createElement('button');
+  showButton.type = 'button';
+  showButton.className = 'editor-toggle-button';
+  showButton.dataset.role = 'scene';
+  showButton.textContent = 'Szene';
+  showButton.style.display = 'none';
+  toggleStack.appendChild(showButton);
+
+  const setVisible = (visible: boolean) => {
+    panel.dataset.hidden = visible ? 'false' : 'true';
+    showButton.style.display = visible ? 'none' : 'inline-flex';
+  };
 
   const title = document.createElement('h2');
   title.textContent = 'Szene speichern / laden';
   panel.appendChild(title);
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'editor-scene-panel__close';
+  closeButton.setAttribute('aria-label', 'Szene-Panel ausblenden');
+  closeButton.textContent = '×';
+  panel.appendChild(closeButton);
 
   const exportRow = document.createElement('div');
   exportRow.className = 'row';
@@ -255,6 +351,10 @@ function setupScenePanel(game: Game, editor: Editor) {
   document.body.appendChild(panel);
 
   let busy = false;
+
+  closeButton.addEventListener('click', () => setVisible(false));
+  showButton.addEventListener('click', () => setVisible(true));
+  setVisible(true);
 
   const setStatus = (message: string, state: 'ok' | 'error' = 'ok') => {
     status.textContent = message;

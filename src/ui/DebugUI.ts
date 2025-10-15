@@ -10,7 +10,129 @@ type Options = {
 
 export async function mountDebugUI(game: Game, options: Options = {}) {
   const { Pane } = await import('tweakpane');
-  const pane = new Pane({ title: 'Debug' });
+  const ensureToggleStack = () => {
+    let stack = document.querySelector<HTMLDivElement>('.editor-toggle-stack');
+    if (!stack) {
+      const styleId = 'editor-toggle-stack-styles';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          .editor-toggle-stack {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 45;
+            pointer-events: none;
+          }
+          .editor-toggle-button {
+            pointer-events: auto;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(30, 64, 175, 0.75);
+            color: #e2e8f0;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: filter 0.15s ease;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35);
+          }
+          .editor-toggle-button:hover {
+            filter: brightness(1.1);
+          }
+          .editor-toggle-button[data-role="debug"] {
+            background: rgba(6, 95, 70, 0.75);
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      stack = document.createElement('div');
+      stack.className = 'editor-toggle-stack';
+      document.body.appendChild(stack);
+    }
+    return stack;
+  };
+
+  const hostId = 'debug-pane-host-styles';
+  if (!document.getElementById(hostId)) {
+    const style = document.createElement('style');
+    style.id = hostId;
+    style.textContent = `
+      .debug-pane-host {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 44;
+        pointer-events: auto;
+      }
+      .debug-pane-host[data-hidden="true"] {
+        display: none;
+      }
+      .debug-pane-host .debug-pane-close {
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: none;
+        background: rgba(15, 23, 42, 0.65);
+        color: #e2e8f0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        line-height: 1;
+      }
+      .debug-pane-host .debug-pane-close:hover {
+        background: rgba(30, 41, 59, 0.85);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const host = document.createElement('div');
+  host.className = 'debug-pane-host';
+  host.dataset.hidden = 'false';
+  document.body.appendChild(host);
+
+  const pane = new Pane({ title: 'Debug', container: host });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'debug-pane-close';
+  closeBtn.setAttribute('aria-label', 'Debug-Panel ausblenden');
+  closeBtn.textContent = '×';
+  host.appendChild(closeBtn);
+
+  const toggleStack = ensureToggleStack();
+  const showBtn = document.createElement('button');
+  showBtn.type = 'button';
+  showBtn.className = 'editor-toggle-button';
+  showBtn.dataset.role = 'debug';
+  showBtn.textContent = 'Debug';
+  showBtn.style.display = 'none';
+  toggleStack.appendChild(showBtn);
+
+  const setVisible = (visible: boolean) => {
+    host.dataset.hidden = visible ? 'false' : 'true';
+    showBtn.style.display = visible ? 'none' : 'inline-flex';
+  };
+
+  closeBtn.addEventListener('click', () => setVisible(false));
+  showBtn.addEventListener('click', () => setVisible(true));
+
+  setVisible(true);
 
   const getCameraFollow = () => {
     const rig = options.getCameraRig?.();
@@ -233,6 +355,9 @@ export async function mountDebugUI(game: Game, options: Options = {}) {
     clearInterval(interval);
     disposeBodyControls();
     clearSelectionBindings();
+    closeBtn.remove();
+    showBtn.remove();
+    host.remove();
   });
 
   return pane;
