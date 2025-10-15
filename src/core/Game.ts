@@ -45,6 +45,25 @@ export class Game {
     const contact = new CANNON.ContactMaterial(this.defaultMat, this.defaultMat, { friction: 0.3, restitution: 0.1 });
     this.world.addContactMaterial(contact);
 
+    // Lighting
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
+    hemiLight.position.set(0, 20, 0);
+    this.scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(8, 12, 6);
+    dirLight.target.position.set(0, 0, 0);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.1;
+    dirLight.shadow.camera.far = 200;
+    dirLight.shadow.camera.left = -25;
+    dirLight.shadow.camera.right = 25;
+    dirLight.shadow.camera.top = 25;
+    dirLight.shadow.camera.bottom = -25;
+    this.scene.add(dirLight);
+    this.scene.add(dirLight.target);
+
     // Grid & ground
     const grid = new THREE.GridHelper(100,100); (grid.material as any).opacity=0.25; (grid.material as any).transparent=true;
     this.scene.add(grid);
@@ -63,11 +82,26 @@ export class Game {
   }
 
   add(go: GameObject){
-    if ((go as any).body){ ((go as any).body).__owner = go; ((go as any).body).addEventListener('collide', (e: any)=> this.events.emit('collision', { self: go, other: (e.body as any).__owner, raw: e })); }
-    (go as any).game = this;
-    this.objects.push(go); this.scene.add(go.object3D); go.addedTo(this);
+    if (go.body){
+      (go.body as any).__owner = go;
+      (go.body as any).addEventListener('collide', (e: any)=> this.events.emit('collision', { self: go, other: (e.body as any).__owner, raw: e }));
+    }
+    go.object3D.traverse((node) => {
+      node.userData.__gameObject = go;
+    });
+    go.addedTo(this);
+    this.objects.push(go);
+    this.scene.add(go.object3D);
   }
-  remove(go: GameObject){ const i=this.objects.indexOf(go); if(i>=0) this.objects.splice(i,1); this.scene.remove(go.object3D); }
+  remove(go: GameObject){
+    const i=this.objects.indexOf(go);
+    if(i>=0) this.objects.splice(i,1);
+    go.object3D.traverse((node) => {
+      if (node.userData.__gameObject === go) delete node.userData.__gameObject;
+    });
+    this.scene.remove(go.object3D);
+    go.game = undefined;
+  }
 
   resize(){ const w = this.container.clientWidth || innerWidth; const h = this.container.clientHeight || innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
 

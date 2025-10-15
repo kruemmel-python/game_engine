@@ -11,16 +11,25 @@ import { Editor } from '../../src/editor/Editor';
 const container = document.getElementById('app')!;
 const game = new Game(container);
 
-// 🔎 Alle GLBs aus ./models automatisch finden (neue Vite-API)
-const glbMap = import.meta.glob('./models/*.glb', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>;
+// 🔎 Alle GLBs automatisch finden (unterstützt mehrere bekannte Ordnernamen)
+const glbMap = import.meta.glob(
+  [
+    './models/*.{glb,gltf}',
+    './model/*.{glb,gltf}',
+    '../../models/*.{glb,gltf}',
+  ],
+  {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  },
+) as Record<string, string>;
 
 const urls = Object.values(glbMap);
 if (urls.length === 0) {
-  console.warn('Keine .glb-Dateien in examples/editor-demo/models gefunden.');
+  console.warn(
+    'Keine .glb- oder .gltf-Dateien in bekannten Model-Ordnern gefunden.',
+  );
 }
 
 // Helper: GLB laden und als GameObject anfügen
