@@ -73,9 +73,17 @@ export async function mountDebugUI(game: Game, options: Options = {}) {
         right: 16px;
         z-index: 44;
         pointer-events: auto;
+        max-height: calc(100vh - 32px);
+        display: flex;
+        flex-direction: column;
       }
       .debug-pane-host[data-hidden="true"] {
         display: none;
+      }
+      .debug-pane-host .tp-dfwv {
+        flex: 1;
+        max-height: 100%;
+        overflow-y: auto;
       }
       .debug-pane-host .debug-pane-close {
         position: absolute;
