@@ -497,6 +497,18 @@
       _onGLTFLoaded(gltf, label, { dynamic, exact=false }){
         const root = gltf.scene;
         root.traverse(obj=>{ if(obj.isMesh){ obj.castShadow = true; obj.receiveShadow = true; } });
+
+        // Normalize GLB scale so the largest dimension is 2 units
+        const bbox = new THREE.Box3().setFromObject(root);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const targetSize = 2.0;
+        if (maxDim > 0.001){
+          const scaleFactor = targetSize / maxDim;
+          root.scale.setScalar(scaleFactor);
+        }
+
         this.frameObject(root);
 
         // Physics body from bounds
