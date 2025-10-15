@@ -7,20 +7,40 @@ import { AnimationSM } from '../../src/components/AnimationSM';
 import { CameraFollow } from '../../src/components/CameraFollow';
 import { loadGLB } from '../../src/assets/gltf';
 import { Editor } from '../../src/editor/Editor';
+import { toSceneJSON, loadScene as loadSceneData } from '../../src/assets/scene';
+import type { SceneJSON } from '../../src/assets/scene';
+import { mountDebugUI } from '../../src/ui/DebugUI';
 
 const container = document.getElementById('app')!;
 const game = new Game(container);
+const editor = new Editor(game);
+let cameraRig: GameObject | undefined;
 
-// 🔎 Alle GLBs aus ./models automatisch finden (neue Vite-API)
-const glbMap = import.meta.glob('./models/*.glb', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>;
+(window as any).game = game;
+(window as any).editor = editor;
+
+setupScenePanel(game, editor);
+void mountDebugUI(game, { getCameraRig: () => cameraRig, editor });
+
+// 🔎 Alle GLBs automatisch finden (unterstützt mehrere bekannte Ordnernamen)
+const glbMap = import.meta.glob(
+  [
+    './models/*.{glb,gltf}',
+    './model/*.{glb,gltf}',
+    '../../models/*.{glb,gltf}',
+  ],
+  {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  },
+) as Record<string, string>;
 
 const urls = Object.values(glbMap);
 if (urls.length === 0) {
-  console.warn('Keine .glb-Dateien in examples/editor-demo/models gefunden.');
+  console.warn(
+    'Keine .glb- oder .gltf-Dateien in bekannten Model-Ordnern gefunden.',
+  );
 }
 
 // Helper: GLB laden und als GameObject anfügen
@@ -69,13 +89,11 @@ async function spawnGLB(
     game.frameObject(root);
     const rig = new GameObject({ name: 'CameraRig' });
     (rig as any).addComponent(new CameraFollow({ target: go }));
+    cameraRig = rig;
     game.add(rig);
 
     // Editor
-    const editor = new Editor(game);
     editor.select(go);
-    (window as any).game = game;
-    (window as any).editor = editor;
   }
 
   // 2) Weitere Modelle als statische Deko spawnen (leicht versetzt)
@@ -88,3 +106,283 @@ async function spawnGLB(
     }
   }
 })();
+
+function setupScenePanel(game: Game, editor: Editor) {
+  const style = document.createElement('style');
+  style.textContent = `
+    .editor-scene-panel {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 40;
+      display: grid;
+      gap: 8px;
+      max-width: 320px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(17, 24, 39, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      box-shadow: 0 18px 30px rgba(0, 0, 0, 0.35);
+    }
+    .editor-scene-panel h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .editor-scene-panel .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .editor-scene-panel button {
+      flex: 1 1 auto;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(59, 130, 246, 0.16);
+      color: inherit;
+      cursor: pointer;
+      transition: filter 0.15s ease;
+    }
+    .editor-scene-panel button:hover {
+      filter: brightness(1.1);
+    }
+    .editor-scene-panel textarea {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 8px 10px;
+      background: rgba(15, 23, 42, 0.9);
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', Consolas, 'SFMono-Regular', monospace;
+      font-size: 12px;
+    }
+    .editor-scene-panel input[type="text"] {
+      flex: 1 1 160px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.9);
+      color: #f8fafc;
+    }
+    .editor-scene-panel .status {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    .editor-scene-panel .status[data-state="error"] {
+      color: #fca5a5;
+    }
+    .editor-scene-panel small {
+      font-size: 11px;
+      opacity: 0.75;
+      line-height: 1.4;
+    }
+  `;
+  document.head.appendChild(style);
+
+  const panel = document.createElement('div');
+  panel.className = 'editor-scene-panel';
+
+  const title = document.createElement('h2');
+  title.textContent = 'Szene speichern / laden';
+  panel.appendChild(title);
+
+  const exportRow = document.createElement('div');
+  exportRow.className = 'row';
+
+  const exportBtn = document.createElement('button');
+  exportBtn.textContent = 'JSON exportieren';
+  exportRow.appendChild(exportBtn);
+
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = 'Kopieren';
+  exportRow.appendChild(copyBtn);
+
+  panel.appendChild(exportRow);
+
+  const textarea = document.createElement('textarea');
+  textarea.placeholder = 'Exportierte Szene erscheint hier …';
+  panel.appendChild(textarea);
+
+  const loadRow = document.createElement('div');
+  loadRow.className = 'row';
+
+  const loadBtn = document.createElement('button');
+  loadBtn.textContent = 'Aus Text laden';
+  loadRow.appendChild(loadBtn);
+
+  const fileBtn = document.createElement('button');
+  fileBtn.textContent = 'JSON-Datei wählen';
+  loadRow.appendChild(fileBtn);
+
+  panel.appendChild(loadRow);
+
+  const urlRow = document.createElement('div');
+  urlRow.className = 'row';
+
+  const urlInput = document.createElement('input');
+  urlInput.type = 'text';
+  urlInput.placeholder = 'Scene-JSON URL (optional)';
+  urlRow.appendChild(urlInput);
+
+  const urlBtn = document.createElement('button');
+  urlBtn.textContent = 'URL laden';
+  urlRow.appendChild(urlBtn);
+
+  panel.appendChild(urlRow);
+
+  const status = document.createElement('div');
+  status.className = 'status';
+  status.textContent = 'Bereit.';
+  panel.appendChild(status);
+
+  const hint = document.createElement('small');
+  hint.textContent = 'Tipp: Die exportierte Datei kannst du unter examples/editor-demo/scene.json ablegen oder per loadScene(game, data) im Spiel laden.';
+  panel.appendChild(hint);
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json,application/json';
+  fileInput.style.display = 'none';
+  panel.appendChild(fileInput);
+
+  document.body.appendChild(panel);
+
+  let busy = false;
+
+  const setStatus = (message: string, state: 'ok' | 'error' = 'ok') => {
+    status.textContent = message;
+    status.dataset.state = state;
+  };
+
+  const downloadScene = (json: string) => {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'scene.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const clearScene = () => {
+    editor.select(undefined);
+    const toRemove = [...game.objects];
+    for (const go of toRemove) {
+      game.remove(go);
+    }
+  };
+
+  const focusFirstObject = () => {
+    const first = game.objects.find((obj) => obj.name !== 'CameraRig') ?? game.objects[0];
+    if (first) {
+      game.frameObject(first.object3D);
+      editor.select(first);
+    } else {
+      editor.select(undefined);
+    }
+  };
+
+  const applyScene = async (data: SceneJSON) => {
+    busy = true;
+    setStatus('Szene wird geladen …');
+    try {
+      clearScene();
+      await loadSceneData(game, data);
+      focusFirstObject();
+      setStatus('Szene geladen.');
+    } catch (err) {
+      console.error('Scene load failed', err);
+      setStatus('Fehler beim Laden der Szene.', 'error');
+    } finally {
+      busy = false;
+    }
+  };
+
+  exportBtn.addEventListener('click', () => {
+    const json = JSON.stringify(toSceneJSON(game), null, 2);
+    textarea.value = json;
+    downloadScene(json);
+    setStatus('Szene exportiert (Download gestartet).');
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    if (!textarea.value.trim()) {
+      setStatus('Kein Szeneninhalt zum Kopieren.', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(textarea.value);
+      setStatus('JSON in Zwischenablage kopiert.');
+    } catch (err) {
+      console.warn('Clipboard copy failed', err);
+      setStatus('Zwischenablage nicht verfügbar.', 'error');
+    }
+  });
+
+  loadBtn.addEventListener('click', async () => {
+    if (busy) return;
+    if (!textarea.value.trim()) {
+      setStatus('Kein JSON zum Laden vorhanden.', 'error');
+      return;
+    }
+    try {
+      const data = JSON.parse(textarea.value) as SceneJSON;
+      await applyScene(data);
+    } catch (err) {
+      console.error('Invalid scene JSON', err);
+      setStatus('JSON konnte nicht geparst werden.', 'error');
+    }
+  });
+
+  fileBtn.addEventListener('click', () => {
+    if (busy) return;
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async (event) => {
+    if (busy) return;
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      textarea.value = text;
+      const data = JSON.parse(text) as SceneJSON;
+      await applyScene(data);
+    } catch (err) {
+      console.error('Scene file load failed', err);
+      setStatus('Datei konnte nicht geladen werden.', 'error');
+    } finally {
+      target.value = '';
+    }
+  });
+
+  urlBtn.addEventListener('click', async () => {
+    if (busy) return;
+    const url = urlInput.value.trim();
+    if (!url) {
+      setStatus('Bitte eine URL angeben.', 'error');
+      return;
+    }
+    try {
+      setStatus('Lade Szene von URL …');
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as SceneJSON;
+      textarea.value = JSON.stringify(data, null, 2);
+      await applyScene(data);
+    } catch (err) {
+      console.error('Scene fetch failed', err);
+      setStatus('Szene konnte nicht geladen werden.', 'error');
+    }
+  });
+}
