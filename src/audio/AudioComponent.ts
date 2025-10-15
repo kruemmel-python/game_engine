@@ -1,11 +1,14 @@
 import * as THREE from 'three';
+import type { Game } from '../core/Game';
+import type { GameObject } from '../ecs/GameObject';
 import { Component } from '../ecs/Component';
 export class AudioComponent extends Component {
   url: string = '';
   loop=false; autoplay=false; positional=true; refDistance=5;
   sound?: THREE.PositionalAudio|THREE.Audio; _loaded=false;
   constructor(opts: Partial<AudioComponent> = {}){ super(); Object.assign(this, opts); }
-  async onAdded(){ 
+  async onAdded(game: Game, owner: GameObject){
+    super.onAdded(game, owner);
     const audio = this.positional ? new THREE.PositionalAudio(this.game.listener) : new THREE.Audio(this.game.listener);
     this.sound = audio as any; if (this.positional) (audio as THREE.PositionalAudio).setRefDistance(this.refDistance);
     this.owner.object3D.add(audio as any);

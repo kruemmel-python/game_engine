@@ -28,10 +28,37 @@ export async function instantiate(game: Game, entry: SceneItem){
   if (entry.source){
     const gltf:any = await loadGLB(game, entry.source);
     const root = gltf.scene as THREE.Object3D;
-    if (entry.position) root.position.set(...entry.position);
-    if (entry.rotation) root.quaternion.set(...entry.rotation);
-    if (entry.scale) root.scale.set(...entry.scale);
     const body = createBodyFromObject(root, { dynamic: !!entry.dynamic, exact: !!entry.exact });
+
+    if (entry.position) {
+      root.position.set(...entry.position);
+      body?.position.set(entry.position[0], entry.position[1], entry.position[2]);
+      if ((body as any)?.interpolatedPosition) {
+        (body as any).interpolatedPosition.set(
+          entry.position[0],
+          entry.position[1],
+          entry.position[2],
+        );
+      }
+    }
+    if (entry.rotation) {
+      root.quaternion.set(...entry.rotation);
+      body?.quaternion.set(
+        entry.rotation[0],
+        entry.rotation[1],
+        entry.rotation[2],
+        entry.rotation[3],
+      );
+      if ((body as any)?.interpolatedQuaternion) {
+        (body as any).interpolatedQuaternion.set(
+          entry.rotation[0],
+          entry.rotation[1],
+          entry.rotation[2],
+          entry.rotation[3],
+        );
+      }
+    }
+    if (entry.scale) root.scale.set(...entry.scale);
     const go = new GameObject({ name: entry.name||entry.source, object3D: root, body }); (root as any).userData.source = entry.source; game.add(go); return go;
   }
   const go = new GameObject({ name: entry.name||'Empty' }); if (entry.position) go.object3D.position.set(...entry.position); if (entry.rotation) go.object3D.quaternion.set(...entry.rotation); if (entry.scale) go.object3D.scale.set(...entry.scale); game.add(go); return go;
