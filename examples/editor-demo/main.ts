@@ -83,6 +83,23 @@ async function spawnGLB(
     // Editor
     const editor = new Editor(game);
     editor.select(go);
+    const charactersFolder = editor.sceneManager.createFolder('Characters', '#4ac0ff');
+    editor.sceneManager.assignToFolder(go, charactersFolder.id);
+    editor.navigation.saveBookmark('PlayerStart');
+    editor.ui.setGridVisible(true);
+    editor.ui.setSnapSettings({ translate: 0.25, rotate: 5 });
+    editor.environment.setAutoPauseOnBlur(true);
+    editor.environment.setHemisphereIntensity(0.65);
+    editor.simulation.setPlayFromSelection(go);
+    editor.simulation.stop();
+
+    editor.events.on('selection:changed', ({ selection }) => {
+      if (selection) {
+        editor.sceneManager.focus(selection);
+      }
+    });
+
+    editor.collaboration.saveLocal('autosave');
     (window as any).game = game;
     (window as any).editor = editor;
   }

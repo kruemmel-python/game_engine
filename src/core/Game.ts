@@ -1,7 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as CANNON from 'cannon-es';
-import { PMREMGenerator, UnsignedByteType, Color, Box3, Vector3 } from 'three';
+import {
+  PMREMGenerator,
+  UnsignedByteType,
+  Color,
+  Box3,
+  Vector3,
+  GridHelper,
+  Mesh,
+  PlaneGeometry,
+  ShadowMaterial,
+  Texture,
+} from 'three';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { EventBus } from './EventBus';
 import { GameObject } from '../ecs/GameObject';
@@ -18,6 +29,12 @@ export class Game {
   pmrem: PMREMGenerator;
   listener: THREE.AudioListener;
   audioLoader = new THREE.AudioLoader();
+  hemiLight: THREE.HemisphereLight;
+  dirLight: THREE.DirectionalLight;
+  gridHelper: GridHelper;
+  ground: Mesh<PlaneGeometry, ShadowMaterial>;
+  timeScale = 1;
+  helpersVisible = true;
 
   private last = performance.now(); private acc = 0; private dtFixed = 1/60;
   paused = false;
@@ -46,29 +63,30 @@ export class Game {
     this.world.addContactMaterial(contact);
 
     // Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
-    hemiLight.position.set(0, 20, 0);
-    this.scene.add(hemiLight);
+    this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
+    this.hemiLight.position.set(0, 20, 0);
+    this.scene.add(this.hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
-    dirLight.position.set(8, 12, 6);
-    dirLight.target.position.set(0, 0, 0);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(2048, 2048);
-    dirLight.shadow.camera.near = 0.1;
-    dirLight.shadow.camera.far = 200;
-    dirLight.shadow.camera.left = -25;
-    dirLight.shadow.camera.right = 25;
-    dirLight.shadow.camera.top = 25;
-    dirLight.shadow.camera.bottom = -25;
-    this.scene.add(dirLight);
-    this.scene.add(dirLight.target);
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    this.dirLight.position.set(8, 12, 6);
+    this.dirLight.target.position.set(0, 0, 0);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.set(2048, 2048);
+    this.dirLight.shadow.camera.near = 0.1;
+    this.dirLight.shadow.camera.far = 200;
+    this.dirLight.shadow.camera.left = -25;
+    this.dirLight.shadow.camera.right = 25;
+    this.dirLight.shadow.camera.top = 25;
+    this.dirLight.shadow.camera.bottom = -25;
+    this.scene.add(this.dirLight);
+    this.scene.add(this.dirLight.target);
 
     // Grid & ground
-    const grid = new THREE.GridHelper(100,100); (grid.material as any).opacity=0.25; (grid.material as any).transparent=true;
-    this.scene.add(grid);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(500,500), new THREE.ShadowMaterial({opacity:0.25}));
-    ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; this.scene.add(ground);
+    this.gridHelper = new THREE.GridHelper(100,100);
+    (this.gridHelper.material as any).opacity=0.25; (this.gridHelper.material as any).transparent=true;
+    this.scene.add(this.gridHelper);
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(500,500), new THREE.ShadowMaterial({opacity:0.25}));
+    this.ground.rotation.x = -Math.PI/2; this.ground.receiveShadow = true; this.scene.add(this.ground);
 
     // Env
     this.pmrem = new PMREMGenerator(this.renderer);
@@ -92,6 +110,7 @@ export class Game {
     go.addedTo(this);
     this.objects.push(go);
     this.scene.add(go.object3D);
+    this.events.emit('scene:objectAdded', go);
   }
   remove(go: GameObject){
     const i=this.objects.indexOf(go);
@@ -101,6 +120,7 @@ export class Game {
     });
     this.scene.remove(go.object3D);
     go.game = undefined;
+    this.events.emit('scene:objectRemoved', go);
   }
 
   resize(){ const w = this.container.clientWidth || innerWidth; const h = this.container.clientHeight || innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
@@ -108,7 +128,9 @@ export class Game {
   tick(now: number){
     requestAnimationFrame((t)=> this.tick(t));
     if (this.paused){ this.renderer.render(this.scene, this.camera); return; }
-    const dt = Math.min(0.05, (now - this.last)/1000); this.last=now; this.acc+=dt;
+    const dtRaw = Math.min(0.05, (now - this.last)/1000); this.last=now;
+    const dt = dtRaw * this.timeScale;
+    this.acc+=dt;
     while (this.acc >= this.dtFixed){ this.world.step(this.dtFixed); this.acc -= this.dtFixed; }
     for (const o of this.objects) o.update(dt);
     this.controls.update(); this.renderer.render(this.scene, this.camera);
@@ -120,5 +142,47 @@ export class Game {
     const target = new THREE.Vector3(0, Math.max(0.5, size.y*0.5), 0);
     this.camera.position.copy(target.clone().add(new THREE.Vector3(1,0.35,1).normalize().multiplyScalar(dist)));
     this.controls.target.copy(target); this.controls.update();
+  }
+
+  setPaused(value: boolean){
+    if (this.paused === value) return;
+    this.paused = value;
+    this.events.emit('game:paused', this.paused);
+  }
+
+  togglePaused(){
+    this.setPaused(!this.paused);
+  }
+
+  setTimeScale(scale: number){
+    const next = Math.max(0, scale);
+    if (this.timeScale === next) return;
+    this.timeScale = next;
+    this.events.emit('game:timeScale', this.timeScale);
+  }
+
+  getFixedTimeStep(){
+    return this.dtFixed;
+  }
+
+  setHelpersVisible(visible: boolean){
+    this.helpersVisible = visible;
+    this.gridHelper.visible = visible;
+    this.ground.visible = visible;
+    this.events.emit('game:helpersVisible', visible);
+  }
+
+  stepSimulation(dt = this.dtFixed){
+    const step = Math.max(1e-4, dt);
+    this.world.step(step);
+    for (const o of this.objects) o.update(step);
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    this.events.emit('game:stepped', step);
+  }
+
+  setEnvironmentMap(texture?: Texture){
+    this.scene.environment = texture ?? null;
+    this.events.emit('game:environment', texture ?? null);
   }
 }
