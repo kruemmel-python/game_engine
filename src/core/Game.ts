@@ -128,11 +128,20 @@ export class Game {
   }
 
   frameObject(obj: THREE.Object3D){
-    const box = new THREE.Box3().setFromObject(obj); const size = new THREE.Vector3(); box.getSize(size);
-    const maxDim = Math.max(size.x,size.y,size.z); const dist = maxDim * 1.6 / Math.tan((Math.PI*this.camera.fov)/360);
-    const target = new THREE.Vector3(0, Math.max(0.5, size.y*0.5), 0);
-    this.camera.position.copy(target.clone().add(new THREE.Vector3(1,0.35,1).normalize().multiplyScalar(dist)));
-    this.controls.target.copy(target); this.controls.update();
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const safeDim = Math.max(maxDim, 0.75);
+    const dist = (safeDim * 1.6) / Math.tan((Math.PI * this.camera.fov) / 360);
+    const offsetDir = new THREE.Vector3(1, 0.35, 1).normalize();
+
+    this.camera.position.copy(center.clone().add(offsetDir.multiplyScalar(dist)));
+    this.controls.target.copy(center);
+    this.controls.update();
   }
 
   private updateCameraCollisionMeshes(){
