@@ -11,7 +11,6 @@ export interface SceneJSON { version: 1; items: SceneItem[]; }
 export function toSceneJSON(game: Game): SceneJSON {
   const items: SceneItem[] = [];
   for(const o of game.objects){
-    if (o.editorOnly) continue;
     if (o.name==='CameraRig') continue;
     const t=o.object3D, mass=(o.body as any)?.mass||0; const exact = (o.body && !(o.body.shapes?.[0] instanceof (CANNON as any).Box));
     items.push({ name:o.name, position:[t.position.x,t.position.y,t.position.z], rotation:[t.quaternion.x,t.quaternion.y,t.quaternion.z,t.quaternion.w], scale:[t.scale.x,t.scale.y,t.scale.z], dynamic: mass>0, exact, source: (t as any).userData?.source||null });

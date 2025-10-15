@@ -19,8 +19,6 @@ kannst du später einfach in `models/` ergänzen.
 - Drücke **Entf**, um das ausgewählte Objekt aus der Szene zu entfernen.
 - Mit **F** setzt du Position, Rotation und Skalierung auf die Startwerte zurück.
 - Mit **C** (oder über den Kamera-Schalter oben rechts) wechselst du zwischen Player- und Viewer-Kamera.
-- Das neue Panel **Objekte** blendet Spieler, Kameras und Beleuchtung ein – ein Klick wählt das Element aus, damit du es direkt mit dem Gizmo verschieben, drehen oder skalieren kannst.
-- Viewer-Kamera sowie Key- und Fill-Light erscheinen als sichtbare Handles in der Szene und lassen sich wie normale Objekte für eine gezielte Ausleuchtung ausrichten.
 - Ein Transform-Overlay oben rechts zeigt dir jederzeit die exakten Positions-, Rotations- und Skalierungswerte an, damit du schnell wieder zu `0` zurückfindest.
 
 Lege deine `.glb`- oder `.gltf`-Dateien in `examples/editor-demo/models/` ab, damit sie automatisch geladen werden.

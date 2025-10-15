@@ -6,11 +6,6 @@ import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import type { Game } from '../core/Game';
 import type { GameObject } from '../ecs/GameObject';
 
-type HandleHooks = {
-  onTick?: () => void;
-  onObjectChange?: () => void;
-};
-
 export class Editor {
   readonly gizmo: TransformControls;
   selected?: GameObject;
@@ -37,13 +32,6 @@ export class Editor {
   private selectionListeners = new Set<(selection?: GameObject) => void>();
   private restoreRender?: () => void;
   private restoreCameraCollision?: () => void;
-  private handleEntries: Array<{ go: GameObject; hooks: HandleHooks }> = [];
-  private handleHookMap = new WeakMap<GameObject, HandleHooks>();
-  private viewerHandle?: GameObject;
-  private viewerHandleData?: { target: THREE.Object3D; line: THREE.Line };
-  private viewerHelper?: THREE.CameraHelper;
-  private tmpVecA = new THREE.Vector3();
-  private tmpVecB = new THREE.Vector3();
 
   constructor(public game: Game) {
     this.game.setCameraCollisionEnabled(false);
@@ -62,8 +50,6 @@ export class Editor {
     this.gizmo.addEventListener('objectChange', () => {
       if (!this.selected) return;
       this.syncBodyToObject(this.selected);
-      const hooks = this.handleHookMap.get(this.selected);
-      hooks?.onObjectChange?.();
     });
 
     const domElement = game.renderer.domElement;
@@ -78,11 +64,8 @@ export class Editor {
     window.addEventListener('keydown', keyHandler);
     this.disposeFns.push(() => window.removeEventListener('keydown', keyHandler));
 
-    this.setupDefaultHandles();
-
     this.transformHud = this.createTransformHud();
     const loop = () => {
-      this.tickHandles();
       this.updateTransformHud();
       this.hudLoop = requestAnimationFrame(loop);
     };
@@ -102,18 +85,6 @@ export class Editor {
       this.restoreCameraCollision();
       this.restoreCameraCollision = undefined;
     }
-    if (this.viewerHandle) {
-      this.game.remove(this.viewerHandle);
-      this.viewerHandle = undefined;
-    }
-    if (this.viewerHelper) {
-      this.game.scene.remove(this.viewerHelper);
-      this.viewerHelper.dispose();
-      this.viewerHelper = undefined;
-    }
-    this.viewerHandleData = undefined;
-    this.handleEntries = [];
-    this.handleHookMap = new WeakMap();
     this.composer?.dispose();
     this.composer = undefined;
     this.outlinePass = undefined;
@@ -147,10 +118,6 @@ export class Editor {
   onSelectionChanged(listener: (selection?: GameObject) => void) {
     this.selectionListeners.add(listener);
     return () => this.selectionListeners.delete(listener);
-  }
-
-  getViewerHandle() {
-    return this.viewerHandle;
   }
 
   private onPointerDown(event: PointerEvent) {
@@ -239,146 +206,6 @@ export class Editor {
     this.originalTransforms.set(go, data);
   }
 
-  private setupDefaultHandles() {
-    const { keyLight, fillLight } = this.game.editorHandles;
-    if (keyLight) {
-      this.registerHandle(keyLight.go, {
-        onTick: () => keyLight.helper.update(),
-        onObjectChange: () => keyLight.helper.update(),
-      });
-    }
-    if (fillLight) {
-      this.registerHandle(fillLight.go, {
-        onTick: () => fillLight.helper.update(),
-        onObjectChange: () => fillLight.helper.update(),
-      });
-    }
-
-    this.createViewerCameraHandle();
-  }
-
-  private registerHandle(go: GameObject, hooks: HandleHooks) {
-    this.handleEntries.push({ go, hooks });
-    this.handleHookMap.set(go, hooks);
-  }
-
-  private tickHandles() {
-    for (const entry of this.handleEntries) {
-      entry.hooks.onTick?.();
-    }
-  }
-
-  private createViewerCameraHandle() {
-    if (this.viewerHandle) return;
-
-    const root = new THREE.Object3D();
-    root.name = 'Viewer Camera';
-
-    const body = new THREE.Mesh(
-      new THREE.ConeGeometry(0.22, 0.45, 18),
-      new THREE.MeshBasicMaterial({
-        color: 0x60a5fa,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.9,
-      }),
-    );
-    body.rotation.x = Math.PI / 2;
-    body.userData.__editorHelper = true;
-    root.add(body);
-
-    const pivot = new THREE.Object3D();
-    root.add(pivot);
-
-    const target = new THREE.Object3D();
-    target.name = 'Viewer Camera Target';
-    pivot.add(target);
-
-    const targetMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.1, 16, 16),
-      new THREE.MeshBasicMaterial({
-        color: 0x38bdf8,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.9,
-      }),
-    );
-    targetMesh.userData.__editorHelper = true;
-    target.add(targetMesh);
-
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, 0, -1),
-    ]);
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const line = new THREE.Line(lineGeometry, lineMaterial);
-    line.userData.__editorHelper = true;
-    pivot.add(line);
-
-    const helper = new THREE.CameraHelper(this.game.camera);
-    helper.userData.__editorHelper = true;
-    this.game.scene.add(helper);
-    this.viewerHelper = helper;
-
-    const go = new GameObject({ name: 'Viewer Camera', object3D: root, editorOnly: true });
-    this.game.add(go);
-    this.viewerHandle = go;
-    this.viewerHandleData = { target, line };
-
-    this.registerHandle(go, {
-      onTick: () => this.updateViewerHandleFromCamera(),
-      onObjectChange: () => this.syncCameraToViewerHandle(),
-    });
-
-    this.updateViewerHandleFromCamera(true);
-  }
-
-  private updateViewerHandleFromCamera(force = false) {
-    if (!this.viewerHandle || !this.viewerHandleData) return;
-    if (!force && this.selected === this.viewerHandle && this.gizmo.dragging) return;
-
-    const camera = this.game.camera;
-    const target = this.game.controls.target;
-    const distance = Math.max(0.5, camera.position.distanceTo(target));
-
-    this.viewerHandle.object3D.position.copy(camera.position);
-    this.viewerHandle.object3D.lookAt(target);
-    this.viewerHandleData.target.position.set(0, 0, -distance);
-    this.updateViewerLine(distance);
-    this.viewerHelper?.update();
-  }
-
-  private syncCameraToViewerHandle() {
-    if (!this.viewerHandle || !this.viewerHandleData) return;
-
-    const worldPos = this.tmpVecA;
-    const targetPos = this.tmpVecB;
-    this.viewerHandle.object3D.updateMatrixWorld(true);
-    this.viewerHandle.object3D.getWorldPosition(worldPos);
-    this.viewerHandleData.target.updateMatrixWorld(true);
-    this.viewerHandleData.target.getWorldPosition(targetPos);
-
-    this.game.camera.position.copy(worldPos);
-    this.game.controls.target.copy(targetPos);
-    this.game.controls.update();
-    this.game.invalidateCameraCollision();
-
-    this.updateViewerHandleFromCamera(true);
-  }
-
-  private updateViewerLine(distance: number) {
-    if (!this.viewerHandleData) return;
-    const geometry = this.viewerHandleData.line.geometry as THREE.BufferGeometry;
-    const position = geometry.getAttribute('position') as THREE.BufferAttribute;
-    position.setXYZ(1, 0, 0, -distance);
-    position.needsUpdate = true;
-    geometry.computeBoundingSphere();
-  }
-
   private resetSelectedTransform() {
     const go = this.selected;
     if (!go) return;
@@ -413,9 +240,6 @@ export class Editor {
 
     this.gizmo.attach(go.object3D);
     this.gizmo.updateMatrixWorld(true);
-    const hooks = this.handleHookMap.get(go);
-    hooks?.onObjectChange?.();
-    hooks?.onTick?.();
     this.updateTransformHud(true);
   }
 
