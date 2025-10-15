@@ -1,0 +1,23 @@
+{
+  "name": "@neuro/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite examples/editor-demo",
+    "build:lib": "vite build --config vite.lib.config.ts",
+    "build:demo": "vite build examples/editor-demo",
+    "build": "npm run build:lib",
+    "preview": "vite preview examples/editor-demo"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "meshoptimizer": "^0.20.0",
+    "three": "^0.159.0",
+    "tweakpane": "^4.0.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^7.1.10"
+  }
+}
