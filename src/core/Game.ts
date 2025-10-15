@@ -63,11 +63,20 @@ export class Game {
   }
 
   add(go: GameObject){
-    if ((go as any).body){ ((go as any).body).__owner = go; ((go as any).body).addEventListener('collide', (e: any)=> this.events.emit('collision', { self: go, other: (e.body as any).__owner, raw: e })); }
-    (go as any).game = this;
-    this.objects.push(go); this.scene.add(go.object3D); go.addedTo(this);
+    if (go.body){
+      (go.body as any).__owner = go;
+      (go.body as any).addEventListener('collide', (e: any)=> this.events.emit('collision', { self: go, other: (e.body as any).__owner, raw: e }));
+    }
+    go.addedTo(this);
+    this.objects.push(go);
+    this.scene.add(go.object3D);
   }
-  remove(go: GameObject){ const i=this.objects.indexOf(go); if(i>=0) this.objects.splice(i,1); this.scene.remove(go.object3D); }
+  remove(go: GameObject){
+    const i=this.objects.indexOf(go);
+    if(i>=0) this.objects.splice(i,1);
+    this.scene.remove(go.object3D);
+    go.game = undefined;
+  }
 
   resize(){ const w = this.container.clientWidth || innerWidth; const h = this.container.clientHeight || innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
 

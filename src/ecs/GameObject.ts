@@ -1,19 +1,29 @@
 import * as THREE from 'three';
 import type * as CANNON from 'cannon-es';
+import type { Game } from '../core/Game';
 import { Component } from './Component';
 export class GameObject {
   name: string;
   object3D: THREE.Object3D;
   body?: CANNON.Body;
   components: Component[] = [];
+  game?: Game;
   constructor(opts: {name?:string, object3D?:THREE.Object3D, body?:CANNON.Body, components?: Component[]} = {}){
     this.name = opts.name ?? 'GameObject';
     this.object3D = opts.object3D ?? new THREE.Object3D();
     this.body = opts.body;
     (opts.components ?? []).forEach(c => this.addComponent(c));
   }
-  addedTo(game: any){ this.components.forEach(c => c.onAdded(game, this)); }
-  addComponent(c: Component){ this.components.push(c); (self as any).game && c.onAdded((self as any).game, this); }
+  addedTo(game: Game){
+    this.game = game;
+    this.components.forEach(c => c.onAdded(game, this));
+  }
+  addComponent(c: Component){
+    this.components.push(c);
+    if (this.game) {
+      c.onAdded(this.game, this);
+    }
+  }
   removeComponent(c: Component){ const i=this.components.indexOf(c); if(i>=0){ this.components.splice(i,1); c.onRemoved(); } }
   update(dt: number){
     if (this.body){
