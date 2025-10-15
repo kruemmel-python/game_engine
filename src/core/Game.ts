@@ -18,9 +18,14 @@ export class Game {
   pmrem: PMREMGenerator;
   listener: THREE.AudioListener;
   audioLoader = new THREE.AudioLoader();
+  hemisphereLight!: THREE.HemisphereLight;
+  directionalLight!: THREE.DirectionalLight;
+  gridHelper!: THREE.GridHelper;
 
   private last = performance.now(); private acc = 0; private dtFixed = 1/60;
   paused = false;
+  timeScale = 1;
+  maxSubSteps = 5;
 
   constructor(public container: HTMLElement){
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -49,6 +54,7 @@ export class Game {
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d3d3d, 0.55);
     hemiLight.position.set(0, 20, 0);
     this.scene.add(hemiLight);
+    this.hemisphereLight = hemiLight;
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
     dirLight.position.set(8, 12, 6);
@@ -63,10 +69,12 @@ export class Game {
     dirLight.shadow.camera.bottom = -25;
     this.scene.add(dirLight);
     this.scene.add(dirLight.target);
+    this.directionalLight = dirLight;
 
     // Grid & ground
     const grid = new THREE.GridHelper(100,100); (grid.material as any).opacity=0.25; (grid.material as any).transparent=true;
     this.scene.add(grid);
+    this.gridHelper = grid;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(500,500), new THREE.ShadowMaterial({opacity:0.25}));
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; this.scene.add(ground);
 
@@ -92,6 +100,7 @@ export class Game {
     go.addedTo(this);
     this.objects.push(go);
     this.scene.add(go.object3D);
+    this.events.emit('object-added', go);
   }
   remove(go: GameObject){
     const i=this.objects.indexOf(go);
@@ -101,6 +110,7 @@ export class Game {
     });
     this.scene.remove(go.object3D);
     go.game = undefined;
+    this.events.emit('object-removed', go);
   }
 
   resize(){ const w = this.container.clientWidth || innerWidth; const h = this.container.clientHeight || innerHeight; this.renderer.setSize(w,h,false); this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); }
@@ -108,10 +118,16 @@ export class Game {
   tick(now: number){
     requestAnimationFrame((t)=> this.tick(t));
     if (this.paused){ this.renderer.render(this.scene, this.camera); return; }
-    const dt = Math.min(0.05, (now - this.last)/1000); this.last=now; this.acc+=dt;
-    while (this.acc >= this.dtFixed){ this.world.step(this.dtFixed); this.acc -= this.dtFixed; }
+    const dtReal = Math.min(0.05, (now - this.last)/1000); this.last=now;
+    const dt = dtReal * this.timeScale;
+    this.acc+=dt;
+    while (this.acc >= this.dtFixed){
+      this.world.step(this.dtFixed * this.timeScale, dt, this.maxSubSteps);
+      this.acc -= this.dtFixed;
+    }
     for (const o of this.objects) o.update(dt);
     this.controls.update(); this.renderer.render(this.scene, this.camera);
+    this.events.emit('tick', { dtReal, dt, timeScale: this.timeScale });
   }
 
   frameObject(obj: THREE.Object3D){
@@ -120,5 +136,15 @@ export class Game {
     const target = new THREE.Vector3(0, Math.max(0.5, size.y*0.5), 0);
     this.camera.position.copy(target.clone().add(new THREE.Vector3(1,0.35,1).normalize().multiplyScalar(dist)));
     this.controls.target.copy(target); this.controls.update();
+  }
+
+  stepSimulation(step = this.dtFixed){
+    this.world.step(step);
+    for (const o of this.objects) o.update(step);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  get fixedDelta(){
+    return this.dtFixed;
   }
 }
