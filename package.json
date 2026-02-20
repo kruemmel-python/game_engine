@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite examples/editor-demo",
+    "dev:game": "vite Game",
     "build:lib": "vite build --config vite.lib.config.ts",
     "build:demo": "vite build examples/editor-demo",
+    "build:game": "vite build Game",
     "build": "npm run build:lib",
-    "preview": "vite preview examples/editor-demo"
+    "preview": "vite preview examples/editor-demo",
+    "preview:game": "vite preview Game"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
